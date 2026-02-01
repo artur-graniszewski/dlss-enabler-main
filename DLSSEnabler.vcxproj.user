@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments>-vk --dlss-debug=extra -slLog</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArgumentsHistory>-vk --dlss-debug=extra -slLog|</LocalDebuggerCommandArgumentsHistory>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Experimental|x64'">
+    <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments>--dlss-debug=extra -d3d12 -debug -sllog</LocalDebuggerCommandArguments>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments>--dlss-debug=extra -d3d12 -debug -sllog</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArgumentsHistory>--dlss-debug=extra -vk --dlss-nvapi=embedde --dlss-dlssg=embedded|--dlss-debug=extra -d3d12|--dlss-debug=extra -d3d12 -debug|--dlss-debug=extra -d3d11 -debug -sllog|--dlss-debug=extra -d3d12 -debug -sllog|</LocalDebuggerCommandArgumentsHistory>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Prerelease|x64'">
+    <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments>--dlss-debug=extra -d3d12 -debug -sllog</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArgumentsHistory>--dlss-debug=extra -vk --dlss-nvapi=embedde --dlss-dlssg=embedded|--dlss-debug=extra -d3d12|--dlss-debug=extra -d3d12 -debug|--dlss-debug=extra -d3d11 -debug -sllog|--dlss-debug=extra -d3d12 -debug -sllog|</LocalDebuggerCommandArgumentsHistory>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug (CP 2077)|x64'">
+    <LocalDebuggerCommand>C:\Games\Cyberpunk 2077\bin\x64\cyberpunk2077.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments>--dlss-debug=extra</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArgumentsHistory>-vk --dlss-debug=extra|-vk --dlss-debug=extra --dlss-nvapi=native --dlss-dlssg=embedded|-vk --dlss-debug=extra --dlss-nvapi=embedded --dlss-dlssg=embedded|--dlss-debug=extra -vk --dlss-nvapi=embedded --dlss-dlssg=embedded|--dlss-debug=extra|</LocalDebuggerCommandArgumentsHistory>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments>--dlss-debug=extra -d3d12 -debug -sllog</LocalDebuggerCommandArguments>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Prerelease|Win32'">
+    <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommandArguments>--dlss-debug=extra -d3d12 -debug -sllog</LocalDebuggerCommandArguments>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug (CP 2077)|Win32'">
+    <LocalDebuggerCommand>C:\Games\Cyberpunk 2077\bin\x64\cyberpunk2077.exe</LocalDebuggerCommand>
+    <LocalDebuggerCommandArguments>--dlss-debug=extra</LocalDebuggerCommandArguments>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Experimental|Win32'">
+    <LocalDebuggerCommandArguments>--dlss-debug=extra -d3d12 -debug -sllog</LocalDebuggerCommandArguments>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
+  </PropertyGroup>
+</Project>

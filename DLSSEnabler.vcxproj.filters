@@ -1,0 +1,701 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="Utils\NvngxProxy.cpp">
+      <Filter>Proxy\NGX</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Core.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="DllMain.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Exports\Exports.cpp">
+      <Filter>Exports</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Validator.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Console.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Includes\nvapi\NvApiDriverSettings.c">
+      <Filter>Proxy\NVAPI\Helpers</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Autoconfig.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Common.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Common.h">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\StreamlineProxy.cpp">
+      <Filter>Proxy\Streamline</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Logger.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Context.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\VulkanProxy.cpp">
+      <Filter>Proxy\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\RegistryProxy.cpp">
+      <Filter>Proxy\Registry</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\SwapchainProxy.cpp">
+      <Filter>Proxy\DXGI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Wrapped_Swapchain.cpp">
+      <Filter>Proxy\DXGI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Preloader.cpp">
+      <Filter>Loader</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\DlssgProxy.cpp">
+      <Filter>Proxy\NGX</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\BackendManager.cpp">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\ProcResolver.cpp">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Includes\NvParamImp.cpp">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\DetourApiDetours.cpp">
+      <Filter>Detours</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\HagsHook.cpp">
+      <Filter>Proxy\HAGS\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\HagsProxy.cpp">
+      <Filter>Proxy\HAGS</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\RegistryHook.cpp">
+      <Filter>Proxy\Registry\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\DxgiHook.cpp">
+      <Filter>Proxy\DXGI\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\StreamlineHook.cpp">
+      <Filter>Proxy\Streamline\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\VulkanHook.cpp">
+      <Filter>Proxy\Vulkan\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Kernel32Hook.cpp">
+      <Filter>Proxy\Kernel32\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\Kernel32Proxy.cpp">
+      <Filter>Proxy\Kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\OptiscalerHook.cpp">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\FakeNVAPIHook.cpp">
+      <Filter>Proxy\NVAPI\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\Nvapi64Dispatch.cpp">
+      <Filter>Proxy\NVAPI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\NVAPIHook.cpp">
+      <Filter>Proxy\NVAPI\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\DlssgHook.cpp">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\NgxProviderHook.cpp">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\NgxProvider.cpp">
+      <Filter>Proxy\NGX</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\DxgiProxy.cpp">
+      <Filter>Proxy\DXGI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\GpuHelpers.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\NgxFrontend.cpp">
+      <Filter>Proxy\NGX</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\NgxFrontendHook.cpp">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\SsrtgiPostProcessD3D12.cpp">
+      <Filter>RayTracing</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxHook.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\SettingsMenu.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\SwapchainEvents.cpp">
+      <Filter>Proxy\DXGI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\FpsMonitor.cpp">
+      <Filter>FpsMonitor</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\FpsHook.cpp">
+      <Filter>FpsMonitor\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\ReflexEvents.cpp">
+      <Filter>Proxy\NVAPI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxImgui\imgui.cpp">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxImgui\imgui_draw.cpp">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxImgui\imgui_impl_dx11.cpp">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxImgui\imgui_impl_dx12.cpp">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxImgui\imgui_impl_win32.cpp">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxImgui\imgui_tables.cpp">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxImgui\imgui_widgets.cpp">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\SettingsPersistence.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UiHook.cpp">
+      <Filter>UI\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\MenuAnimations.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\NgxFeatureEvents.cpp">
+      <Filter>Proxy\NGX</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\SsrtgiListener.cpp">
+      <Filter>RayTracing</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\SsrtgiHook.cpp">
+      <Filter>RayTracing\Hook</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\OverdriveController.cpp">
+      <Filter>Overdrive</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\NvngxCommon.cpp">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\UxImgui\misc\freetype\imgui_freetype.cpp">
+      <Filter>UI\ImGui</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Detours\detours.h" />
+    <ClInclude Include="Utils\NvngxProxy.h">
+      <Filter>Proxy\NGX</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Core.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_defs.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_defs_dlssd.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_helpers.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_helpers_dlssd.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_helpers_dlssd_vk.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_helpers_vk.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_params.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_params_dlssd.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\dlss\nvsdk_ngx_vk.h">
+      <Filter>Proxy\NGX\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="Exports\Exports.h">
+      <Filter>Exports</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\nvapi.h">
+      <Filter>Proxy\NVAPI\Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Validator.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Console.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\nvapi\NvApiDriverSettings.h">
+      <Filter>Proxy\NVAPI\Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Exports\Resources.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NvAPIInterface.h">
+      <Filter>Proxy\NVAPI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Autoconfig.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\StreamlineProxy.h">
+      <Filter>Proxy\Streamline</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Logger.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DxgiProxy.h">
+      <Filter>Proxy\DXGI</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Context.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\VulkanProxy.h">
+      <Filter>Proxy\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\RegistryProxy.h">
+      <Filter>Proxy\Registry</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SwapchainProxy.h">
+      <Filter>Proxy\DXGI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Wrapped_Swapchain.h">
+      <Filter>Proxy\DXGI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Preloader.h">
+      <Filter>Loader</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DlssgProxy.h">
+      <Filter>Proxy\NGX</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\FakeNVAPI.h">
+      <Filter>External</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Optiscaler.h">
+      <Filter>External</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Nvapi64.h">
+      <Filter>Proxy\NVAPI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Nvapi64Dispatch.h">
+      <Filter>Proxy\NVAPI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxState.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxLogHelpers.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\IProcResolver.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\ExportRegistry.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\INgxBackend.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\ProcResolver.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\ScopedGpuSpoofing.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\BackendManager.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NvParameter.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Includes\NvParamImp.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DetourApi.h">
+      <Filter>Detours</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DetourTxn.h">
+      <Filter>Detours</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Hook.h">
+      <Filter>Detours</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\HookRegistry.h">
+      <Filter>Detours</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\HookManager.h">
+      <Filter>Detours</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\HagsHook.h">
+      <Filter>Proxy\HAGS\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DetourApiDetours.h">
+      <Filter>Detours</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\HagsProxy.h">
+      <Filter>Proxy\HAGS</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\RegistryHook.h">
+      <Filter>Proxy\Registry\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DxgiHook.h">
+      <Filter>Proxy\DXGI\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\StreamlineHook.h">
+      <Filter>Proxy\Streamline\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\VulkanHook.h">
+      <Filter>Proxy\Vulkan\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Kernel32Hook.h">
+      <Filter>Proxy\Kernel32\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Kernel32Proxy.h">
+      <Filter>Proxy\Kernel32</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\OptiscalerHook.h">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\FakeNVAPIHook.h">
+      <Filter>Proxy\NVAPI\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NVAPIHook.h">
+      <Filter>Proxy\NVAPI\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DlssgHook.h">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\GpuHelpers.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxProviderHook.h">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxHookHelpers.h">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxProvider.h">
+      <Filter>Proxy\NGX</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\ProcAliasRegistry.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxFrontend.h">
+      <Filter>Proxy\NGX</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxFrontendHook.h">
+      <Filter>Proxy\NGX\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiPostProcessD3D12.h">
+      <Filter>RayTracing</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\PostFxRegistry.h">
+      <Filter>RayTracing</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxHooks.h">
+      <Filter>RayTracing</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\UxHook.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SettingsMenu.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SwapchainEvents.h">
+      <Filter>Proxy\DXGI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\FpsMonitor.h">
+      <Filter>FpsMonitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\FpsHook.h">
+      <Filter>FpsMonitor\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\ReflexEvents.h">
+      <Filter>Proxy\NVAPI</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="Utils\UxImgui\imconfig.h">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\UxImgui\imgui.h">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\UxImgui\imgui_impl_dx11.h">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\UxImgui\imgui_impl_dx12.h">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\UxImgui\imgui_impl_win32.h">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\UxImgui\imgui_internal.h">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SettingsPersistence.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\UiHook.h">
+      <Filter>UI\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\MenuAnimations.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NgxFeatureEvents.h">
+      <Filter>Proxy\NGX</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiListener.h">
+      <Filter>RayTracing</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiHook.h">
+      <Filter>RayTracing\Hook</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiCopyPass_cso.h">
+      <Filter>RayTracing\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiDenoise_cso.h">
+      <Filter>RayTracing\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiDepthMinMax_cso.h">
+      <Filter>RayTracing\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiGatherHZB_cso.h">
+      <Filter>RayTracing\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiHzbGenerate_cso.h">
+      <Filter>RayTracing\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiTemporal_cso.h">
+      <Filter>RayTracing\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\SsrtgiComposite_cso.h">
+      <Filter>RayTracing\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\OverdriveController.h">
+      <Filter>Overdrive</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\NvngxCommon.h">
+      <Filter>Proxy\NGX\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\UxImgui\misc\freetype\imgui_freetype.h">
+      <Filter>UI\ImGui</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="Exports\psapi.asm">
+      <Filter>Exports</Filter>
+    </MASM>
+    <MASM Include="Exports\version.asm">
+      <Filter>Exports</Filter>
+    </MASM>
+    <MASM Include="Exports\winhttp.asm">
+      <Filter>Exports</Filter>
+    </MASM>
+    <MASM Include="Exports\winmm.asm">
+      <Filter>Exports</Filter>
+    </MASM>
+    <MASM Include="Exports\dbghelp.asm">
+      <Filter>Exports</Filter>
+    </MASM>
+    <MASM Include="Exports\dxgi.asm">
+      <Filter>Exports</Filter>
+    </MASM>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include=".gitignore" />
+    <None Include="Exports\Exports.def">
+      <Filter>Exports</Filter>
+    </None>
+    <None Include="Utils\SsrtgiCommon.hlsl">
+      <Filter>RayTracing</Filter>
+    </None>
+    <None Include="Utils\SsrtgiGather.hlsl">
+      <Filter>RayTracing</Filter>
+    </None>
+    <None Include="External\imgui\imgui_impl_dx12.h">
+      <Filter>UI\ImGui</Filter>
+    </None>
+    <None Include="External\imgui\imgui_impl_win32.h">
+      <Filter>UI\ImGui</Filter>
+    </None>
+    <None Include="External\imgui\imgui.h">
+      <Filter>UI\ImGui</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Core">
+      <UniqueIdentifier>{a655b310-36b7-48a6-9dd4-98c02c120efa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Exports">
+      <UniqueIdentifier>{2b3328e8-a2c2-4c32-a940-6223df22003a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utils">
+      <UniqueIdentifier>{9af4232c-3101-4bfc-a7f4-3a0883071bb7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="External">
+      <UniqueIdentifier>{ada5fec9-f354-402d-9f11-c1af3e85acf3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy">
+      <UniqueIdentifier>{2cfb23ef-4714-448b-9980-2f9b4f003477}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\NGX">
+      <UniqueIdentifier>{16c9462f-b0b9-4341-88ee-f1bb90dc6c9f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\NVAPI">
+      <UniqueIdentifier>{70922a99-c52b-49fe-becb-612b28cc7e2a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\NVAPI\Helpers">
+      <UniqueIdentifier>{130cfd86-3ae0-428c-9ab0-9419ef418df9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\Registry">
+      <UniqueIdentifier>{b4955632-b2fd-4679-898e-0b5495963118}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\Streamline">
+      <UniqueIdentifier>{ef5330bf-4e3c-4c90-a5c8-fddd4a096ec0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\Vulkan">
+      <UniqueIdentifier>{3fd712f2-ff7d-4ca2-8858-78c0f3562f7b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\NGX\Headers">
+      <UniqueIdentifier>{b49f8c64-7082-4d5d-871d-eb804c06854d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\NGX\Common">
+      <UniqueIdentifier>{56591366-3f3f-479b-a7ae-fe233d4d8b19}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\DXGI">
+      <UniqueIdentifier>{ab2bb8dc-d6f7-45c2-b3c6-4d3909d1e5da}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Loader">
+      <UniqueIdentifier>{ef009670-5d4d-4b91-81c9-ee3944d43764}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Detours">
+      <UniqueIdentifier>{dcb80021-3ba2-4809-8623-3d6e3fb875f3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\HAGS">
+      <UniqueIdentifier>{a2c45691-3e85-489a-9214-4405610a348d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\HAGS\Hook">
+      <UniqueIdentifier>{d235c9cb-2837-44ef-9b2f-1da090b7bd54}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\Registry\Hook">
+      <UniqueIdentifier>{0e1d9629-19b3-4373-ba39-fe387f814e0e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\DXGI\Hook">
+      <UniqueIdentifier>{09a227a4-c90f-4b70-b0c0-adc474bdfdcc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\Streamline\Hook">
+      <UniqueIdentifier>{2c7bfe4a-6eef-4734-9963-bd5824bd7fc5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\Vulkan\Hook">
+      <UniqueIdentifier>{e1b2142e-3266-467c-a041-c6b6280e8532}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\Kernel32">
+      <UniqueIdentifier>{7257fb20-140c-4390-bbde-b07a27e8b659}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\Kernel32\Hook">
+      <UniqueIdentifier>{3c10dd2c-795b-425a-bec5-0b351d305cf0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\NGX\Hook">
+      <UniqueIdentifier>{b4f362db-445c-43af-9903-b166b85ed5fd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Proxy\NVAPI\Hook">
+      <UniqueIdentifier>{bb19d7e0-8083-4a08-9e07-c29449fad6e0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UI">
+      <UniqueIdentifier>{691d5861-7dd3-4420-bf71-74364eff9fcd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UI\ImGui">
+      <UniqueIdentifier>{b46f0e68-41b9-4318-bada-c482dc6af71c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="FpsMonitor">
+      <UniqueIdentifier>{53944455-ba3d-4a7a-8950-3194fe65140f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="FpsMonitor\Hook">
+      <UniqueIdentifier>{f22f9f00-d9cd-4f81-9e7a-1a38e50cf741}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UI\ImGui\UxGui">
+      <UniqueIdentifier>{6b811fad-79f7-4782-a226-85931c5076c5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UI\Hook">
+      <UniqueIdentifier>{fdeeb152-0ae6-441f-9473-fdaa539aed4c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RayTracing">
+      <UniqueIdentifier>{e34f370a-a259-49be-8a6d-0cc1c3d32ece}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RayTracing\Hook">
+      <UniqueIdentifier>{62794bd2-deed-474d-b53b-595d809fa129}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RayTracing\Shaders">
+      <UniqueIdentifier>{d7e7fc78-9d34-49e8-b466-0a1f3e6570d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Overdrive">
+      <UniqueIdentifier>{0d8d1eeb-c70f-456c-aaad-a03bdbde2d02}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="DLSSEnabler.rc">
+      <Filter>Core</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Todo.txt" />
+    <Text Include="Utils\UxImgui\LICENSE.txt">
+      <Filter>UI\ImGui\UxGui</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Utils\SsrtgiDenoise.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiTemporal.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiComposite.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiCopyPass.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiGatherHZB.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiHzbGenerate.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiCopyDepth.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiDepthMinMax.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiDenoiseDown.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+    <FxCompile Include="Utils\SsrtgiDenoiseUp.hlsl">
+      <Filter>RayTracing</Filter>
+    </FxCompile>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,534 @@
+EXPORTS
+	GetFileVersionInfoA
+	GetFileVersionInfoByHandle
+	GetFileVersionInfoExA
+	GetFileVersionInfoExW
+	GetFileVersionInfoSizeA
+	GetFileVersionInfoSizeExA
+	GetFileVersionInfoSizeExW
+	GetFileVersionInfoSizeW
+	GetFileVersionInfoW
+	VerFindFileA
+	VerFindFileW
+	VerInstallFileA
+	VerInstallFileW
+	VerLanguageNameA
+	VerLanguageNameW
+	VerQueryValueA
+	VerQueryValueW
+
+	CloseDriver
+	DefDriverProc
+	DriverCallback
+	DrvGetModuleHandle
+	GetDriverModuleHandle
+	OpenDriver
+	PlaySound
+	PlaySoundA
+	PlaySoundW
+	SendDriverMessage
+	WOWAppExit
+	auxGetDevCapsA
+	auxGetDevCapsW
+	auxGetNumDevs
+	auxGetVolume
+	auxOutMessage
+	auxSetVolume
+	joyConfigChanged
+	joyGetDevCapsA
+	joyGetDevCapsW
+	joyGetNumDevs
+	joyGetPos
+	joyGetPosEx
+	joyGetThreshold
+	joyReleaseCapture
+	joySetCapture
+	joySetThreshold
+	mciDriverNotify
+	mciDriverYield
+	mciExecute
+	mciFreeCommandResource
+	mciGetCreatorTask
+	mciGetDeviceIDA
+	mciGetDeviceIDFromElementIDA
+	mciGetDeviceIDFromElementIDW
+	mciGetDeviceIDW
+	mciGetDriverData
+	mciGetErrorStringA
+	mciGetErrorStringW
+	mciGetYieldProc
+	mciLoadCommandResource
+	mciSendCommandA
+	mciSendCommandW
+	mciSendStringA
+	mciSendStringW
+	mciSetDriverData
+	mciSetYieldProc
+	midiConnect
+	midiDisconnect
+	midiInAddBuffer
+	midiInClose
+	midiInGetDevCapsA
+	midiInGetDevCapsW
+	midiInGetErrorTextA
+	midiInGetErrorTextW
+	midiInGetID
+	midiInGetNumDevs
+	midiInMessage
+	midiInOpen
+	midiInPrepareHeader
+	midiInReset
+	midiInStart
+	midiInStop
+	midiInUnprepareHeader
+	midiOutCacheDrumPatches
+	midiOutCachePatches
+	midiOutClose
+	midiOutGetDevCapsA
+	midiOutGetDevCapsW
+	midiOutGetErrorTextA
+	midiOutGetErrorTextW
+	midiOutGetID
+	midiOutGetNumDevs
+	midiOutGetVolume
+	midiOutLongMsg
+	midiOutMessage
+	midiOutOpen
+	midiOutPrepareHeader
+	midiOutReset
+	midiOutSetVolume
+	midiOutShortMsg
+	midiOutUnprepareHeader
+	midiStreamClose
+	midiStreamOpen
+	midiStreamOut
+	midiStreamPause
+	midiStreamPosition
+	midiStreamProperty
+	midiStreamRestart
+	midiStreamStop
+	mixerClose
+	mixerGetControlDetailsA
+	mixerGetControlDetailsW
+	mixerGetDevCapsA
+	mixerGetDevCapsW
+	mixerGetID
+	mixerGetLineControlsA
+	mixerGetLineControlsW
+	mixerGetLineInfoA
+	mixerGetLineInfoW
+	mixerGetNumDevs
+	mixerMessage
+	mixerOpen
+	mixerSetControlDetails
+	mmDrvInstall
+	mmGetCurrentTask
+	mmTaskBlock
+	mmTaskCreate
+	mmTaskSignal
+	mmTaskYield
+	mmioAdvance
+	mmioAscend
+	mmioClose
+	mmioCreateChunk
+	mmioDescend
+	mmioFlush
+	mmioGetInfo
+	mmioInstallIOProcA
+	mmioInstallIOProcW
+	mmioOpenA
+	mmioOpenW
+	mmioRead
+	mmioRenameA
+	mmioRenameW
+	mmioSeek
+	mmioSendMessage
+	mmioSetBuffer
+	mmioSetInfo
+	mmioStringToFOURCCA
+	mmioStringToFOURCCW
+	mmioWrite
+	mmsystemGetVersion
+	sndPlaySoundA
+	sndPlaySoundW
+	timeBeginPeriod = dlss_enabler_timeBeginPeriod
+	timeEndPeriod = dlss_enabler_timeEndPeriod
+	timeGetDevCaps = dlss_enabler_timeGetDevCaps
+	timeGetSystemTime
+	timeGetTime
+	timeKillEvent
+	timeSetEvent
+	waveInAddBuffer
+	waveInClose
+	waveInGetDevCapsA
+	waveInGetDevCapsW
+	waveInGetErrorTextA
+	waveInGetErrorTextW
+	waveInGetID
+	waveInGetNumDevs
+	waveInGetPosition
+	waveInMessage
+	waveInOpen
+	waveInPrepareHeader
+	waveInReset
+	waveInStart
+	waveInStop
+	waveInUnprepareHeader
+	waveOutBreakLoop
+	waveOutClose
+	waveOutGetDevCapsA
+	waveOutGetDevCapsW
+	waveOutGetErrorTextA
+	waveOutGetErrorTextW
+	waveOutGetID
+	waveOutGetNumDevs
+	waveOutGetPitch
+	waveOutGetPlaybackRate
+	waveOutGetPosition
+	waveOutGetVolume
+	waveOutMessage
+	waveOutOpen
+	waveOutPause
+	waveOutPrepareHeader
+	waveOutReset
+	waveOutRestart
+	waveOutSetPitch
+	waveOutSetPlaybackRate
+	waveOutSetVolume
+	waveOutUnprepareHeader
+	waveOutWrite
+	ExportByOrdinal2
+
+Ordinal_1101 = dlss_enabler_Ordinal_1101 @1101
+Ordinal_1102 = dlss_enabler_Ordinal_1102 @1102
+Ordinal_1103 = dlss_enabler_Ordinal_1103 @1103
+Ordinal_1104 = dlss_enabler_Ordinal_1104 @1104
+Ordinal_1105 = dlss_enabler_Ordinal_1105 @1105
+Ordinal_1106 = dlss_enabler_Ordinal_1106 @1106
+Ordinal_1107 = dlss_enabler_Ordinal_1107 @1107
+Ordinal_1108 = dlss_enabler_Ordinal_1108 @1108
+Ordinal_1109 = dlss_enabler_Ordinal_1109 @1109
+Ordinal_1110 = dlss_enabler_Ordinal_1110 @1110
+SymAllocDiaString = dlss_enabler_SymAllocDiaString @1111
+SymFreeDiaString = dlss_enabler_SymFreeDiaString @1112
+SymGetDiaSession = dlss_enabler_SymGetDiaSession @1113
+SymGetDiaSource = dlss_enabler_SymGetDiaSource @1114
+Ordinal_1115 = dlss_enabler_Ordinal_1115 @1115
+Ordinal_1116 = dlss_enabler_Ordinal_1116 @1116
+Ordinal_1117 = dlss_enabler_Ordinal_1117 @1117
+Ordinal_1118 = dlss_enabler_Ordinal_1118 @1118
+Ordinal_1119 = dlss_enabler_Ordinal_1119 @1119
+SymGetLineFromAddrEx = dlss_enabler_SymGetLineFromAddrEx @1120
+SymGetLineFromNameEx = dlss_enabler_SymGetLineFromNameEx @1121
+SymGetLineNextEx = dlss_enabler_SymGetLineNextEx @1122
+SymGetLinePrevEx = dlss_enabler_SymGetLinePrevEx @1123
+SymGetOmapBlockBase = dlss_enabler_SymGetOmapBlockBase @1124
+SymSetDiaSession = dlss_enabler_SymSetDiaSession @1125
+_EFN_DumpImage = dlss_enabler__EFN_DumpImage @1126
+DbgHelpCreateUserDump = dlss_enabler_DbgHelpCreateUserDump @1127
+DbgHelpCreateUserDumpW = dlss_enabler_DbgHelpCreateUserDumpW @1128
+EnumDirTree = dlss_enabler_EnumDirTree @1129
+EnumDirTreeW = dlss_enabler_EnumDirTreeW @1130
+EnumerateLoadedModules = dlss_enabler_EnumerateLoadedModules @1131
+EnumerateLoadedModules64 = dlss_enabler_EnumerateLoadedModules64 @1132
+EnumerateLoadedModulesEx = dlss_enabler_EnumerateLoadedModulesEx @1133
+EnumerateLoadedModulesExW = dlss_enabler_EnumerateLoadedModulesExW @1134
+EnumerateLoadedModulesW64 = dlss_enabler_EnumerateLoadedModulesW64 @1135
+ExtensionApiVersion = dlss_enabler_ExtensionApiVersion @1136
+FindDebugInfoFile = dlss_enabler_FindDebugInfoFile @1137
+FindDebugInfoFileEx = dlss_enabler_FindDebugInfoFileEx @1138
+FindDebugInfoFileExW = dlss_enabler_FindDebugInfoFileExW @1139
+FindExecutableImage = dlss_enabler_FindExecutableImage @1140
+FindExecutableImageEx = dlss_enabler_FindExecutableImageEx @1141
+FindExecutableImageExW = dlss_enabler_FindExecutableImageExW @1142
+FindFileInPath = dlss_enabler_FindFileInPath @1143
+FindFileInSearchPath = dlss_enabler_FindFileInSearchPath @1144
+GetSymLoadError = dlss_enabler_GetSymLoadError @1145
+GetTimestampForLoadedLibrary = dlss_enabler_GetTimestampForLoadedLibrary @1146
+ImageDirectoryEntryToData = dlss_enabler_ImageDirectoryEntryToData @1147
+ImageDirectoryEntryToDataEx = dlss_enabler_ImageDirectoryEntryToDataEx @1148
+ImageNtHeader = dlss_enabler_ImageNtHeader @1149
+ImageRvaToSection = dlss_enabler_ImageRvaToSection @1150
+ImageRvaToVa = dlss_enabler_ImageRvaToVa @1151
+ImagehlpApiVersion = dlss_enabler_ImagehlpApiVersion @1152
+ImagehlpApiVersionEx = dlss_enabler_ImagehlpApiVersionEx @1153
+MakeSureDirectoryPathExists = dlss_enabler_MakeSureDirectoryPathExists @1154
+MiniDumpReadDumpStream = dlss_enabler_MiniDumpReadDumpStream @1155
+MiniDumpWriteDump = dlss_enabler_MiniDumpWriteDump @1156
+RangeMapAddPeImageSections = dlss_enabler_RangeMapAddPeImageSections @1157
+RangeMapCreate = dlss_enabler_RangeMapCreate @1158
+RangeMapFree = dlss_enabler_RangeMapFree @1159
+RangeMapRead = dlss_enabler_RangeMapRead @1160
+RangeMapRemove = dlss_enabler_RangeMapRemove @1161
+RangeMapWrite = dlss_enabler_RangeMapWrite @1162
+RemoveInvalidModuleList = dlss_enabler_RemoveInvalidModuleList @1163
+ReportSymbolLoadSummary = dlss_enabler_ReportSymbolLoadSummary @1164
+SearchTreeForFile = dlss_enabler_SearchTreeForFile @1165
+SearchTreeForFileW = dlss_enabler_SearchTreeForFileW @1166
+SetCheckUserInterruptShared = dlss_enabler_SetCheckUserInterruptShared @1167
+SetSymLoadError = dlss_enabler_SetSymLoadError @1168
+StackWalk = dlss_enabler_StackWalk @1169
+StackWalk64 = dlss_enabler_StackWalk64 @1170
+StackWalkEx = dlss_enabler_StackWalkEx @1171
+SymAddSourceStream = dlss_enabler_SymAddSourceStream @1172
+SymAddSourceStreamA = dlss_enabler_SymAddSourceStreamA @1173
+SymAddSourceStreamW = dlss_enabler_SymAddSourceStreamW @1174
+SymAddSymbol = dlss_enabler_SymAddSymbol @1175
+SymAddSymbolW = dlss_enabler_SymAddSymbolW @1176
+SymAddrIncludeInlineTrace = dlss_enabler_SymAddrIncludeInlineTrace @1177
+SymCleanup = dlss_enabler_SymCleanup @1178
+SymCompareInlineTrace = dlss_enabler_SymCompareInlineTrace @1179
+SymDeleteSymbol = dlss_enabler_SymDeleteSymbol @1180
+SymDeleteSymbolW = dlss_enabler_SymDeleteSymbolW @1181
+SymEnumLines = dlss_enabler_SymEnumLines @1182
+SymEnumLinesW = dlss_enabler_SymEnumLinesW @1183
+SymEnumProcesses = dlss_enabler_SymEnumProcesses @1184
+SymEnumSourceFileTokens = dlss_enabler_SymEnumSourceFileTokens @1185
+SymEnumSourceFiles = dlss_enabler_SymEnumSourceFiles @1186
+SymEnumSourceFilesW = dlss_enabler_SymEnumSourceFilesW @1187
+SymEnumSourceLines = dlss_enabler_SymEnumSourceLines @1188
+SymEnumSourceLinesW = dlss_enabler_SymEnumSourceLinesW @1189
+SymEnumSym = dlss_enabler_SymEnumSym @1190
+SymEnumSymbols = dlss_enabler_SymEnumSymbols @1191
+SymEnumSymbolsEx = dlss_enabler_SymEnumSymbolsEx @1192
+SymEnumSymbolsExW = dlss_enabler_SymEnumSymbolsExW @1193
+SymEnumSymbolsForAddr = dlss_enabler_SymEnumSymbolsForAddr @1194
+SymEnumSymbolsForAddrW = dlss_enabler_SymEnumSymbolsForAddrW @1195
+SymEnumSymbolsW = dlss_enabler_SymEnumSymbolsW @1196
+SymEnumTypes = dlss_enabler_SymEnumTypes @1197
+SymEnumTypesByName = dlss_enabler_SymEnumTypesByName @1198
+SymEnumTypesByNameW = dlss_enabler_SymEnumTypesByNameW @1199
+SymEnumTypesW = dlss_enabler_SymEnumTypesW @1200
+SymEnumerateModules = dlss_enabler_SymEnumerateModules @1201
+SymEnumerateModules64 = dlss_enabler_SymEnumerateModules64 @1202
+SymEnumerateModulesW64 = dlss_enabler_SymEnumerateModulesW64 @1203
+SymEnumerateSymbols = dlss_enabler_SymEnumerateSymbols @1204
+SymEnumerateSymbols64 = dlss_enabler_SymEnumerateSymbols64 @1205
+SymEnumerateSymbolsW = dlss_enabler_SymEnumerateSymbolsW @1206
+SymEnumerateSymbolsW64 = dlss_enabler_SymEnumerateSymbolsW64 @1207
+SymFindDebugInfoFile = dlss_enabler_SymFindDebugInfoFile @1208
+SymFindDebugInfoFileW = dlss_enabler_SymFindDebugInfoFileW @1209
+SymFindExecutableImage = dlss_enabler_SymFindExecutableImage @1210
+SymFindExecutableImageW = dlss_enabler_SymFindExecutableImageW @1211
+SymFindFileInPath = dlss_enabler_SymFindFileInPath @1212
+SymFindFileInPathW = dlss_enabler_SymFindFileInPathW @1213
+SymFromAddr = dlss_enabler_SymFromAddr @1214
+SymFromAddrW = dlss_enabler_SymFromAddrW @1215
+SymFromIndex = dlss_enabler_SymFromIndex @1216
+SymFromIndexW = dlss_enabler_SymFromIndexW @1217
+SymFromInlineContext = dlss_enabler_SymFromInlineContext @1218
+SymFromInlineContextW = dlss_enabler_SymFromInlineContextW @1219
+SymFromName = dlss_enabler_SymFromName @1220
+SymFromNameW = dlss_enabler_SymFromNameW @1221
+SymFromToken = dlss_enabler_SymFromToken @1222
+SymFromTokenW = dlss_enabler_SymFromTokenW @1223
+SymFunctionTableAccess = dlss_enabler_SymFunctionTableAccess @1224
+SymFunctionTableAccess64 = dlss_enabler_SymFunctionTableAccess64 @1225
+SymFunctionTableAccess64AccessRoutines = dlss_enabler_SymFunctionTableAccess64AccessRoutines @1226
+SymGetExtendedOption = dlss_enabler_SymGetExtendedOption @1227
+SymGetFileLineOffsets64 = dlss_enabler_SymGetFileLineOffsets64 @1228
+SymGetHomeDirectory = dlss_enabler_SymGetHomeDirectory @1229
+SymGetHomeDirectoryW = dlss_enabler_SymGetHomeDirectoryW @1230
+SymGetLineFromAddr = dlss_enabler_SymGetLineFromAddr @1231
+SymGetLineFromAddr64 = dlss_enabler_SymGetLineFromAddr64 @1232
+SymGetLineFromAddrW64 = dlss_enabler_SymGetLineFromAddrW64 @1233
+SymGetLineFromInlineContext = dlss_enabler_SymGetLineFromInlineContext @1234
+SymGetLineFromInlineContextW = dlss_enabler_SymGetLineFromInlineContextW @1235
+SymGetLineFromName = dlss_enabler_SymGetLineFromName @1236
+SymGetLineFromName64 = dlss_enabler_SymGetLineFromName64 @1237
+SymGetLineFromNameW64 = dlss_enabler_SymGetLineFromNameW64 @1238
+SymGetLineNext = dlss_enabler_SymGetLineNext @1239
+SymGetLineNext64 = dlss_enabler_SymGetLineNext64 @1240
+SymGetLineNextW64 = dlss_enabler_SymGetLineNextW64 @1241
+SymGetLinePrev = dlss_enabler_SymGetLinePrev @1242
+SymGetLinePrev64 = dlss_enabler_SymGetLinePrev64 @1243
+SymGetLinePrevW64 = dlss_enabler_SymGetLinePrevW64 @1244
+SymGetModuleBase = dlss_enabler_SymGetModuleBase @1245
+SymGetModuleBase64 = dlss_enabler_SymGetModuleBase64 @1246
+SymGetModuleInfo = dlss_enabler_SymGetModuleInfo @1247
+SymGetModuleInfo64 = dlss_enabler_SymGetModuleInfo64 @1248
+SymGetModuleInfoW = dlss_enabler_SymGetModuleInfoW @1249
+SymGetModuleInfoW64 = dlss_enabler_SymGetModuleInfoW64 @1250
+SymGetOmaps = dlss_enabler_SymGetOmaps @1251
+SymGetOptions = dlss_enabler_SymGetOptions @1252
+SymGetScope = dlss_enabler_SymGetScope @1253
+SymGetScopeW = dlss_enabler_SymGetScopeW @1254
+SymGetSearchPath = dlss_enabler_SymGetSearchPath @1255
+SymGetSearchPathW = dlss_enabler_SymGetSearchPathW @1256
+SymGetSourceFile = dlss_enabler_SymGetSourceFile @1257
+SymGetSourceFileChecksum = dlss_enabler_SymGetSourceFileChecksum @1258
+SymGetSourceFileChecksumW = dlss_enabler_SymGetSourceFileChecksumW @1259
+SymGetSourceFileFromToken = dlss_enabler_SymGetSourceFileFromToken @1260
+SymGetSourceFileFromTokenW = dlss_enabler_SymGetSourceFileFromTokenW @1261
+SymGetSourceFileToken = dlss_enabler_SymGetSourceFileToken @1262
+SymGetSourceFileTokenW = dlss_enabler_SymGetSourceFileTokenW @1263
+SymGetSourceFileW = dlss_enabler_SymGetSourceFileW @1264
+SymGetSourceVarFromToken = dlss_enabler_SymGetSourceVarFromToken @1265
+SymGetSourceVarFromTokenW = dlss_enabler_SymGetSourceVarFromTokenW @1266
+SymGetSymFromAddr = dlss_enabler_SymGetSymFromAddr @1267
+SymGetSymFromAddr64 = dlss_enabler_SymGetSymFromAddr64 @1268
+SymGetSymFromName = dlss_enabler_SymGetSymFromName @1269
+SymGetSymFromName64 = dlss_enabler_SymGetSymFromName64 @1270
+SymGetSymNext = dlss_enabler_SymGetSymNext @1271
+SymGetSymNext64 = dlss_enabler_SymGetSymNext64 @1272
+SymGetSymPrev = dlss_enabler_SymGetSymPrev @1273
+SymGetSymPrev64 = dlss_enabler_SymGetSymPrev64 @1274
+SymGetSymbolFile = dlss_enabler_SymGetSymbolFile @1275
+SymGetSymbolFileW = dlss_enabler_SymGetSymbolFileW @1276
+SymGetTypeFromName = dlss_enabler_SymGetTypeFromName @1277
+SymGetTypeFromNameW = dlss_enabler_SymGetTypeFromNameW @1278
+SymGetTypeInfo = dlss_enabler_SymGetTypeInfo @1279
+SymGetTypeInfoEx = dlss_enabler_SymGetTypeInfoEx @1280
+SymGetUnwindInfo = dlss_enabler_SymGetUnwindInfo @1281
+SymInitialize = dlss_enabler_SymInitialize @1282
+SymInitializeW = dlss_enabler_SymInitializeW @1283
+SymLoadModule = dlss_enabler_SymLoadModule @1284
+SymLoadModule64 = dlss_enabler_SymLoadModule64 @1285
+SymLoadModuleEx = dlss_enabler_SymLoadModuleEx @1286
+SymLoadModuleExW = dlss_enabler_SymLoadModuleExW @1287
+SymMatchFileName = dlss_enabler_SymMatchFileName @1288
+SymMatchFileNameW = dlss_enabler_SymMatchFileNameW @1289
+SymMatchString = dlss_enabler_SymMatchString @1290
+SymMatchStringA = dlss_enabler_SymMatchStringA @1291
+SymMatchStringW = dlss_enabler_SymMatchStringW @1292
+SymNext = dlss_enabler_SymNext @1293
+SymNextW = dlss_enabler_SymNextW @1294
+SymPrev = dlss_enabler_SymPrev @1295
+SymPrevW = dlss_enabler_SymPrevW @1296
+SymQueryInlineTrace = dlss_enabler_SymQueryInlineTrace @1297
+SymRefreshModuleList = dlss_enabler_SymRefreshModuleList @1298
+SymRegisterCallback = dlss_enabler_SymRegisterCallback @1299
+SymRegisterCallback64 = dlss_enabler_SymRegisterCallback64 @1300
+SymRegisterCallbackW64 = dlss_enabler_SymRegisterCallbackW64 @1301
+SymRegisterFunctionEntryCallback = dlss_enabler_SymRegisterFunctionEntryCallback @1302
+SymRegisterFunctionEntryCallback64 = dlss_enabler_SymRegisterFunctionEntryCallback64 @1303
+SymSearch = dlss_enabler_SymSearch @1304
+SymSearchW = dlss_enabler_SymSearchW @1305
+SymSetContext = dlss_enabler_SymSetContext @1306
+SymSetExtendedOption = dlss_enabler_SymSetExtendedOption @1307
+SymSetHomeDirectory = dlss_enabler_SymSetHomeDirectory @1308
+SymSetHomeDirectoryW = dlss_enabler_SymSetHomeDirectoryW @1309
+SymSetOptions = dlss_enabler_SymSetOptions @1310
+SymSetParentWindow = dlss_enabler_SymSetParentWindow @1311
+SymSetScopeFromAddr = dlss_enabler_SymSetScopeFromAddr @1312
+SymSetScopeFromIndex = dlss_enabler_SymSetScopeFromIndex @1313
+SymSetScopeFromInlineContext = dlss_enabler_SymSetScopeFromInlineContext @1314
+SymSetSearchPath = dlss_enabler_SymSetSearchPath @1315
+SymSetSearchPathW = dlss_enabler_SymSetSearchPathW @1316
+SymSrvDeltaName = dlss_enabler_SymSrvDeltaName @1317
+SymSrvDeltaNameW = dlss_enabler_SymSrvDeltaNameW @1318
+SymSrvGetFileIndexInfo = dlss_enabler_SymSrvGetFileIndexInfo @1319
+SymSrvGetFileIndexInfoW = dlss_enabler_SymSrvGetFileIndexInfoW @1320
+SymSrvGetFileIndexString = dlss_enabler_SymSrvGetFileIndexString @1321
+SymSrvGetFileIndexStringW = dlss_enabler_SymSrvGetFileIndexStringW @1322
+SymSrvGetFileIndexes = dlss_enabler_SymSrvGetFileIndexes @1323
+SymSrvGetFileIndexesW = dlss_enabler_SymSrvGetFileIndexesW @1324
+SymSrvGetSupplement = dlss_enabler_SymSrvGetSupplement @1325
+SymSrvGetSupplementW = dlss_enabler_SymSrvGetSupplementW @1326
+SymSrvIsStore = dlss_enabler_SymSrvIsStore @1327
+SymSrvIsStoreW = dlss_enabler_SymSrvIsStoreW @1328
+SymSrvStoreFile = dlss_enabler_SymSrvStoreFile @1329
+SymSrvStoreFileW = dlss_enabler_SymSrvStoreFileW @1330
+SymSrvStoreSupplement = dlss_enabler_SymSrvStoreSupplement @1331
+SymSrvStoreSupplementW = dlss_enabler_SymSrvStoreSupplementW @1332
+SymUnDName = dlss_enabler_SymUnDName @1333
+SymUnDName64 = dlss_enabler_SymUnDName64 @1334
+SymUnloadModule = dlss_enabler_SymUnloadModule @1335
+SymUnloadModule64 = dlss_enabler_SymUnloadModule64 @1336
+UnDecorateSymbolName = dlss_enabler_UnDecorateSymbolName @1337
+UnDecorateSymbolNameW = dlss_enabler_UnDecorateSymbolNameW @1338
+WinDbgExtensionDllInit = dlss_enabler_WinDbgExtensionDllInit @1339
+block = dlss_enabler_block @1340
+chksym = dlss_enabler_chksym @1341
+dbghelp = dlss_enabler_dbghelp @1342
+dh = dlss_enabler_dh @1343
+fptr = dlss_enabler_fptr @1344
+homedir = dlss_enabler_homedir @1345
+inlinedbg = dlss_enabler_inlinedbg @1346
+itoldyouso = dlss_enabler_itoldyouso @1347
+lmi = dlss_enabler_lmi @1348
+lminfo = dlss_enabler_lminfo @1349
+omap = dlss_enabler_omap @1350
+optdbgdump = dlss_enabler_optdbgdump @1351
+optdbgdumpaddr = dlss_enabler_optdbgdumpaddr @1352
+srcfiles = dlss_enabler_srcfiles @1353
+stack_force_ebp = dlss_enabler_stack_force_ebp @1354
+stackdbg = dlss_enabler_stackdbg @1355
+sym = dlss_enabler_sym @1356
+symsrv = dlss_enabler_symsrv @1357
+vc7fpo = dlss_enabler_vc7fpo @1358
+
+
+	Private1 = proxy_Private1
+	SvchostPushServiceGlobals = proxy_SvchostPushServiceGlobals
+	WinHttpAddRequestHeaders = proxy_WinHttpAddRequestHeaders
+	WinHttpAutoProxySvcMain = proxy_WinHttpAutoProxySvcMain
+	WinHttpCheckPlatform = proxy_WinHttpCheckPlatform
+	WinHttpCloseHandle = proxy_WinHttpCloseHandle
+	WinHttpConnect = proxy_WinHttpConnect
+	WinHttpConnectionDeletePolicyEntries = proxy_WinHttpConnectionDeletePolicyEntries
+	WinHttpConnectionDeleteProxyInfo = proxy_WinHttpConnectionDeleteProxyInfo
+	WinHttpConnectionFreeNameList = proxy_WinHttpConnectionFreeNameList
+	WinHttpConnectionFreeProxyInfo = proxy_WinHttpConnectionFreeProxyInfo
+	WinHttpConnectionFreeProxyList = proxy_WinHttpConnectionFreeProxyList
+	WinHttpConnectionGetNameList = proxy_WinHttpConnectionGetNameList
+	WinHttpConnectionGetProxyInfo = proxy_WinHttpConnectionGetProxyInfo
+	WinHttpConnectionGetProxyList = proxy_WinHttpConnectionGetProxyList
+	WinHttpConnectionSetPolicyEntries = proxy_WinHttpConnectionSetPolicyEntries
+	WinHttpConnectionSetProxyInfo = proxy_WinHttpConnectionSetProxyInfo
+	WinHttpConnectionUpdateIfIndexTable = proxy_WinHttpConnectionUpdateIfIndexTable
+	WinHttpCrackUrl = proxy_WinHttpCrackUrl
+	WinHttpCreateProxyResolver = proxy_WinHttpCreateProxyResolver
+	WinHttpCreateUrl = proxy_WinHttpCreateUrl
+	WinHttpDetectAutoProxyConfigUrl = proxy_WinHttpDetectAutoProxyConfigUrl
+	WinHttpFreeProxyResult = proxy_WinHttpFreeProxyResult
+	WinHttpFreeProxyResultEx = proxy_WinHttpFreeProxyResultEx
+	WinHttpFreeProxySettings = proxy_WinHttpFreeProxySettings
+	WinHttpGetDefaultProxyConfiguration = proxy_WinHttpGetDefaultProxyConfiguration
+	WinHttpGetIEProxyConfigForCurrentUser = proxy_WinHttpGetIEProxyConfigForCurrentUser
+	WinHttpGetProxyForUrl = proxy_WinHttpGetProxyForUrl
+	WinHttpGetProxyForUrlEx = proxy_WinHttpGetProxyForUrlEx
+	WinHttpGetProxyForUrlEx2 = proxy_WinHttpGetProxyForUrlEx2
+	WinHttpGetProxyForUrlHvsi = proxy_WinHttpGetProxyForUrlHvsi
+	WinHttpGetProxyResult = proxy_WinHttpGetProxyResult
+	WinHttpGetProxyResultEx = proxy_WinHttpGetProxyResultEx
+	WinHttpGetProxySettingsVersion = proxy_WinHttpGetProxySettingsVersion
+	WinHttpGetTunnelSocket = proxy_WinHttpGetTunnelSocket
+	WinHttpOpen = proxy_WinHttpOpen
+	WinHttpOpenRequest = proxy_WinHttpOpenRequest
+	WinHttpPacJsWorkerMain = proxy_WinHttpPacJsWorkerMain
+	WinHttpProbeConnectivity = proxy_WinHttpProbeConnectivity
+	WinHttpQueryAuthSchemes = proxy_WinHttpQueryAuthSchemes
+	WinHttpQueryDataAvailable = proxy_WinHttpQueryDataAvailable
+	WinHttpQueryHeaders = proxy_WinHttpQueryHeaders
+	WinHttpQueryOption = proxy_WinHttpQueryOption
+	WinHttpReadData = proxy_WinHttpReadData
+	WinHttpReadProxySettings = proxy_WinHttpReadProxySettings
+	WinHttpReadProxySettingsHvsi = proxy_WinHttpReadProxySettingsHvsi
+	WinHttpReceiveResponse = proxy_WinHttpReceiveResponse
+	WinHttpResetAutoProxy = proxy_WinHttpResetAutoProxy
+	WinHttpSaveProxyCredentials = proxy_WinHttpSaveProxyCredentials
+	WinHttpSendRequest = proxy_WinHttpSendRequest
+	WinHttpSetCredentials = proxy_WinHttpSetCredentials
+	WinHttpSetDefaultProxyConfiguration = proxy_WinHttpSetDefaultProxyConfiguration
+	WinHttpSetOption = proxy_WinHttpSetOption
+	WinHttpSetStatusCallback = proxy_WinHttpSetStatusCallback
+	WinHttpSetTimeouts = proxy_WinHttpSetTimeouts
+	WinHttpTimeFromSystemTime = proxy_WinHttpTimeFromSystemTime
+	WinHttpTimeToSystemTime = proxy_WinHttpTimeToSystemTime
+	WinHttpWebSocketClose = proxy_WinHttpWebSocketClose
+	WinHttpWebSocketCompleteUpgrade = proxy_WinHttpWebSocketCompleteUpgrade
+	WinHttpWebSocketQueryCloseStatus = proxy_WinHttpWebSocketQueryCloseStatus
+	WinHttpWebSocketReceive = proxy_WinHttpWebSocketReceive
+	WinHttpWebSocketSend = proxy_WinHttpWebSocketSend
+	WinHttpWebSocketShutdown = proxy_WinHttpWebSocketShutdown
+	WinHttpWriteData = proxy_WinHttpWriteData
+	WinHttpWriteProxySettings = proxy_WinHttpWriteProxySettings
+
+; DXGI exports - using original Windows ordinals to ensure compatibility
+; Games/apps may import by ordinal, so we must match the original dxgi.dll
+	CreateDXGIFactory = proxy_CreateDXGIFactory @9
+	CreateDXGIFactory1 = proxy_CreateDXGIFactory1 @10
+	CreateDXGIFactory2 = proxy_CreateDXGIFactory2 @11
+	DXGIDeclareAdapterRemovalSupport = proxy_DXGIDeclareAdapterRemovalSupport @16
+	DXGIGetDebugInterface1 = proxy_DXGIGetDebugInterface1 @17
