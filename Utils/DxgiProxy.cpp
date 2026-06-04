@@ -7,13 +7,23 @@
 #include "DxgiProxy.h"
 #include "SwapchainProxy.h"
 #include <mutex>
+#include <atomic>
+#include <intrin.h>
+#pragma intrinsic(_ReturnAddress)
 
 namespace DXGI
 {
+	// Master switch for the adapter/factory-level vtable hooks installed by
+	// AttachToFactory / AttachToAdapter / EnsureSwapChainDetours.
+	// Raised at the end of HookDxgi::Install, lowered at the start of
+	// HookDxgi::Uninstall so that TeardownDxgi() can detach from a quiescent state.
+	static std::atomic<bool> g_dxgiHooksActive{ false };
+
 	//UINT dxgiVendorId = 0x10EE; // AMD
 	UINT dxgiVendorId = 0x10de; // NVIDIA
 	UINT dxgiDeviceId = 1;
 	//UINT dxgiDeviceId = 0x2684; // RTX 4090
+	//UINT dxgiDeviceId = 0x2C05; // RTX 5070 TI
 	SIZE_T dxgiDedicatedVideoMemory = 0;
 	std::wstring modelName = L"";
 	unsigned int DxgiVersion = 0;
@@ -50,6 +60,22 @@ namespace DXGI
 	void DlssEnablerLogger(const char* message, unsigned int loggingLevel, const char* sourceComponent);
 	UINT WINAPI DlssEnablerInit(UINT newVendorId, UINT newDeviceId, const char* newModelName, SIZE_T newDedicatedVideoMemory = 0);
 
+	// Forward declarations of vtable detour handlers - referenced by TeardownDxgi()
+	// which sits above their definitions.
+	HRESULT WINAPI GetDesc(IDXGIAdapter* This, DXGI_ADAPTER_DESC* pDesc);
+	HRESULT WINAPI GetDesc1(IDXGIAdapter1* This, DXGI_ADAPTER_DESC1* pDesc);
+	HRESULT WINAPI GetDesc2(IDXGIAdapter2* This, DXGI_ADAPTER_DESC2* pDesc);
+	HRESULT WINAPI GetDesc3(IDXGIAdapter4* This, DXGI_ADAPTER_DESC3* pDesc);
+	HRESULT WINAPI EnumAdapters(IDXGIFactory* This, UINT Adapter, IDXGIAdapter** ppAdapter);
+	HRESULT WINAPI EnumAdapters1(IDXGIFactory1* This, UINT Adapter, IDXGIAdapter1** ppAdapter);
+	HRESULT WINAPI EnumAdapterByLuid(IDXGIFactory4* This, LUID AdapterLuid, REFIID riid, void** ppvAdapter);
+	HRESULT WINAPI EnumAdapterByGpuPreference(IDXGIFactory6* This, UINT Adapter, DXGI_GPU_PREFERENCE GpuPreference, REFIID riid, void** ppvAdapter);
+
+	// Subsystem lifecycle - defined below, called by HookDxgi::Install / Uninstall.
+	void EnableDxgiHooks();
+	void DisableDxgiHooks();
+	void TeardownDxgi();
+
 	template< typename T >
 	static std::wstring int_to_hex(T i)
 	{
@@ -59,6 +85,47 @@ namespace DXGI
 			<< std::setw(sizeof(T) * 2)
 			<< std::hex << i;
 		return stream.str() + L")";
+	}
+
+	std::wstring WhoIsTheCaller(void* returnAddress)
+	{
+		HMODULE hModule = NULL;
+		char callerPath[MAX_PATH] = { 0 };
+
+		// Get the return address from the current function call.
+		// void* returnAddress = _ReturnAddress();
+
+		// Get the base address of the module containing the return address.
+		if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			(LPCSTR)returnAddress, &hModule))
+		{
+			// Get the full path of the calling module.
+			GetModuleFileNameA(hModule, callerPath, sizeof(callerPath));
+			auto path = std::filesystem::path(callerPath);
+
+			return path.filename().wstring();
+		}
+
+		return L"";
+	}
+
+	static bool EnableSpoofing(void* returnAddress)
+	{
+		if (ctx.streamline.isSelectiveSpoofingEnabled && WhoIsTheCaller(returnAddress) == Common::GetProcessFileName()) {
+			//LOG_WARNING(L"[DXGI] Selective GPU Spoofing applied");
+			//ctx.streamline.isSelectiveSpoofingEnabled = false;
+			//return false;
+		}
+
+		static bool reported = false;
+		if (GetModuleHandleW(L"OptiPatcher.asi") && ctx.isOptiPatcherActive) {
+			if (!reported) {
+				LOG_WARNING(L"[DXGI] OptiPatcher detected, disabling internal VendorID override");
+				reported = true;
+			}
+			return false;
+		}
+		return true;
 	}
 
 	std::wstring LuidToHexString(LUID luid)
@@ -121,9 +188,83 @@ namespace DXGI
 		dxgiLoadReported = true;
 	}
 
-	static bool EnableSpoofing()
+	// Raise the master flag - from this point on AttachToFactory / AttachToAdapter /
+	// EnsureSwapChainDetours are allowed to install hooks.
+	void EnableDxgiHooks()
 	{
-		return true;
+		g_dxgiHooksActive.store(true, std::memory_order_release);
+	}
+
+	// Lower the master flag - block any further attach from the lazy attach points.
+	// In-flight attaches holding a mutex will re-check the flag after acquiring it
+	// and bail out. Must be called before TeardownDxgi().
+	void DisableDxgiHooks()
+	{
+		g_dxgiHooksActive.store(false, std::memory_order_release);
+	}
+
+	// Symmetric counterpart to the detours installed by AttachToFactory and
+	// AttachToAdapter. Detaches all eight vtable-level trampolines in one
+	// transaction. Must be called after DisableDxgiHooks() so that no concurrent
+	// AttachTo* can race the detach.
+	//
+	// Trampoline pointers are NOT nulled afterwards: any in-flight EnumAdapters*
+	// / GetDesc* handler on another thread may still read them. Post-detach they
+	// point at the original function in dxgi.dll, so invoking them is safe.
+	void TeardownDxgi()
+	{
+		// Take both adapter and factory locks. These are never held together
+		// elsewhere so the order is arbitrary; we pick factory-then-adapter and
+		// keep it consistent should anyone ever need both.
+		std::lock_guard<std::mutex> lockFactory(dxgiFactoryMutex);
+		std::lock_guard<std::mutex> lockAdapter(dxgiAdapterHookMutex);
+
+		bool anyInstalled = orgEnumAdapters || orgEnumAdapters1
+			|| orgEnumAdapterByLuid || orgEnumAdapterByGpuPreference
+			|| orgGetDesc || orgGetDesc1 || orgGetDesc2 || orgGetDesc3;
+		if (!anyInstalled) {
+			return;
+		}
+
+		LOG_INFO(L"[DXGI] Unhooking adapter/factory vtable entries...");
+
+		DetourTransactionBegin();
+		DetourUpdateThread(GetCurrentThread());
+
+		// Detach adapter-level hooks (installed by AttachToAdapter), reverse order.
+		if (orgGetDesc3) {
+			DetourDetach(&(PVOID&)orgGetDesc3, GetDesc3);
+		}
+		if (orgGetDesc2) {
+			DetourDetach(&(PVOID&)orgGetDesc2, GetDesc2);
+		}
+		if (orgGetDesc1) {
+			DetourDetach(&(PVOID&)orgGetDesc1, GetDesc1);
+		}
+		if (orgGetDesc) {
+			DetourDetach(&(PVOID&)orgGetDesc, GetDesc);
+		}
+
+		// Detach factory-level hooks (installed by AttachToFactory), reverse order.
+		if (orgEnumAdapterByGpuPreference) {
+			DetourDetach(&(PVOID&)orgEnumAdapterByGpuPreference, EnumAdapterByGpuPreference);
+		}
+		if (orgEnumAdapterByLuid) {
+			DetourDetach(&(PVOID&)orgEnumAdapterByLuid, EnumAdapterByLuid);
+		}
+		if (orgEnumAdapters1) {
+			DetourDetach(&(PVOID&)orgEnumAdapters1, EnumAdapters1);
+		}
+		if (orgEnumAdapters) {
+			DetourDetach(&(PVOID&)orgEnumAdapters, EnumAdapters);
+		}
+
+		if (DetourTransactionCommit() != NO_ERROR) {
+			LOG_ERROR(L"[DXGI] Failed to detach adapter/factory vtable hooks");
+			return;
+		}
+
+		LOG_INFO(L"[DXGI] Adapter/factory vtable entries unhooked");
 	}
 
 #pragma region Adapter
@@ -139,7 +280,26 @@ namespace DXGI
 				pDesc->DedicatedVideoMemory = dxgiDedicatedVideoMemory;
 			}
 
-			if (EnableSpoofing()) {
+			std::wstring name = modelName;
+			if (name != L"") {
+				const wchar_t* szName = name.c_str();
+				std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
+				std::memcpy(pDesc->Description, szName, 54);
+			}
+
+			if (pDesc->VendorId != 0x10de) {
+				size_t size = sizeof(pDesc->Description) / sizeof(pDesc->Description[0]);
+				// Shift existing characters to the right
+				memmove(pDesc->Description + 1, pDesc->Description, (size - 1) * sizeof(WCHAR));
+
+				// Prepend space character
+				pDesc->Description[0] = L' ';
+			}
+
+
+
+			//LOG_WARNING(L"[DXGI] Called by " + WhoIsTheCaller(_ReturnAddress()));
+			if (EnableSpoofing(_ReturnAddress())) {
 				if (dxgiVendorId > 1) {
 					pDesc->VendorId = dxgiVendorId;
 				}
@@ -154,20 +314,6 @@ namespace DXGI
 					//pDesc->Description[i] = L'\u200B';
 				}
 			}
-
-			std::wstring name = modelName;
-			if (name != L"") {
-				const wchar_t* szName = name.c_str();
-				std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
-				std::memcpy(pDesc->Description, szName, 54);
-			}
-
-			size_t size = sizeof(pDesc->Description) / sizeof(pDesc->Description[0]);
-			// Shift existing characters to the right
-			memmove(pDesc->Description + 1, pDesc->Description, (size - 1) * sizeof(WCHAR));
-
-			// Prepend space character
-			pDesc->Description[0] = L' ';
 
 			LOG_TRACE(L"[DXGI] IDXGIAdapter4.GetDesc3: succeeded");
 		}
@@ -191,7 +337,24 @@ namespace DXGI
 				pDesc->DedicatedVideoMemory = dxgiDedicatedVideoMemory;
 			}
 
-			if (EnableSpoofing()) {
+			std::wstring name = modelName;
+			if (name != L"") {
+				const wchar_t* szName = name.c_str();
+				std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
+				std::memcpy(pDesc->Description, szName, 54);
+			}
+
+			if (pDesc->VendorId != 0x10de) {
+				size_t size = sizeof(pDesc->Description) / sizeof(pDesc->Description[0]);
+				// Shift existing characters to the right
+				memmove(pDesc->Description + 1, pDesc->Description, (size - 1) * sizeof(WCHAR));
+
+				// Prepend space character
+				pDesc->Description[0] = L' ';
+			}
+
+			//LOG_WARNING(L"[DXGI] Called by " + WhoIsTheCaller(_ReturnAddress()));
+			if (EnableSpoofing(_ReturnAddress())) {
 				if (dxgiVendorId > 1) {
 					pDesc->VendorId = dxgiVendorId;
 				}
@@ -206,20 +369,6 @@ namespace DXGI
 					//pDesc->Description[i] = L'\u200B';
 				}
 			}
-
-			std::wstring name = modelName;
-			if (name != L"") {
-				const wchar_t* szName = name.c_str();
-				std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
-				std::memcpy(pDesc->Description, szName, 54);
-			}
-
-			size_t size = sizeof(pDesc->Description) / sizeof(pDesc->Description[0]);
-			// Shift existing characters to the right
-			memmove(pDesc->Description + 1, pDesc->Description, (size - 1) * sizeof(WCHAR));
-
-			// Prepend space character
-			pDesc->Description[0] = L' ';
 
 			LOG_TRACE(L"[DXGI] IDXGIAdapter2.GetDesc2: succeeded");
 		}
@@ -243,7 +392,24 @@ namespace DXGI
 				pDesc->DedicatedVideoMemory = dxgiDedicatedVideoMemory;
 			}
 
-			if (EnableSpoofing()) {
+			std::wstring name = modelName;
+			if (name != L"") {
+				const wchar_t* szName = name.c_str();
+				std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
+				std::memcpy(pDesc->Description, szName, 54);
+			}
+
+			if (pDesc->VendorId != 0x10de) {
+				size_t size = sizeof(pDesc->Description) / sizeof(pDesc->Description[0]);
+				// Shift existing characters to the right
+				memmove(pDesc->Description + 1, pDesc->Description, (size - 1) * sizeof(WCHAR));
+
+				// Prepend space character
+				pDesc->Description[0] = L' ';
+			}
+
+			//LOG_WARNING(L"[DXGI] Called by " + WhoIsTheCaller(_ReturnAddress()));
+			if (EnableSpoofing(_ReturnAddress())) {
 				if (dxgiVendorId > 1) {
 					pDesc->VendorId = dxgiVendorId;
 				}
@@ -252,20 +418,6 @@ namespace DXGI
 					pDesc->DeviceId = dxgiDeviceId;
 				}
 			}
-
-			std::wstring name = modelName;
-			if (name != L"") {
-				const wchar_t* szName = name.c_str();
-				std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
-				std::memcpy(pDesc->Description, szName, 54);
-			}
-
-			size_t size = sizeof(pDesc->Description) / sizeof(pDesc->Description[0]);
-			// Shift existing characters to the right
-			memmove(pDesc->Description + 1, pDesc->Description, (size - 1) * sizeof(WCHAR));
-
-			// Prepend space character
-			pDesc->Description[0] = L' ';
 
 			LOG_TRACE(L"[DXGI] IDXGIAdapter1.GetDesc1: succeeded");
 		}
@@ -289,7 +441,24 @@ namespace DXGI
 				pDesc->DedicatedVideoMemory = dxgiDedicatedVideoMemory;
 			}
 
-			if (EnableSpoofing()) {
+			std::wstring name = modelName;
+			if (name != L"") {
+				const wchar_t* szName = name.c_str();
+				std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
+				std::memcpy(pDesc->Description, szName, 54);
+			}
+
+			if (pDesc->VendorId != 0x10de) {
+				size_t size = sizeof(pDesc->Description) / sizeof(pDesc->Description[0]);
+				// Shift existing characters to the right
+				memmove(pDesc->Description + 1, pDesc->Description, (size - 1) * sizeof(WCHAR));
+
+				// Prepend space character
+				pDesc->Description[0] = L' ';
+			}
+
+			//LOG_WARNING(L"[DXGI] Called by " + WhoIsTheCaller(_ReturnAddress()));
+			if (EnableSpoofing(_ReturnAddress())) {
 				if (dxgiVendorId > 1) {
 					pDesc->VendorId = dxgiVendorId;
 				}
@@ -298,20 +467,6 @@ namespace DXGI
 					pDesc->DeviceId = dxgiDeviceId;
 				}
 			}
-
-			std::wstring name = modelName;
-			if (name != L"") {
-				const wchar_t* szName = name.c_str();
-				std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
-				std::memcpy(pDesc->Description, szName, 54);
-			}
-
-			size_t size = sizeof(pDesc->Description) / sizeof(pDesc->Description[0]);
-			// Shift existing characters to the right
-			memmove(pDesc->Description + 1, pDesc->Description, (size - 1) * sizeof(WCHAR));
-
-			// Prepend space character
-			pDesc->Description[0] = L' ';
 
 			LOG_TRACE(L"[DXGI] IDXGIAdapter.GetDesc: succeeded");
 		}
@@ -437,11 +592,20 @@ namespace DXGI
 
 	static void EnsureSwapChainDetours(IUnknown* factoryUnknown)
 	{
+		// Teardown in progress / subsystem disabled - do not install new hooks.
+		if (!g_dxgiHooksActive.load(std::memory_order_acquire)) {
+			return;
+		}
+
 		if (orgCreateSwapChain != nullptr)
 			return;
 
 		std::lock_guard<std::mutex> lock(dxgiHookMutex);
 
+		// Re-check after acquiring the lock.
+		if (!g_dxgiHooksActive.load(std::memory_order_acquire)) {
+			return;
+		}
 		if (orgCreateSwapChain != nullptr) {
 			return;
 		}
@@ -563,12 +727,21 @@ namespace DXGI
 			return;
 		}
 
+		// Teardown in progress / subsystem disabled - do not install new hooks.
+		if (!g_dxgiHooksActive.load(std::memory_order_acquire)) {
+			return;
+		}
+
 		if (orgGetDesc && orgGetDesc1 && orgGetDesc2 && orgGetDesc3) {
 			return;
 		}
 
 		std::lock_guard<std::mutex> lock(dxgiAdapterHookMutex);
 
+		// Re-check after acquiring the lock.
+		if (!g_dxgiHooksActive.load(std::memory_order_acquire)) {
+			return;
+		}
 		if (orgGetDesc && orgGetDesc1 && orgGetDesc2 && orgGetDesc3) {
 			return;
 		}
@@ -628,6 +801,11 @@ namespace DXGI
 
 	static void AttachToFactory(IUnknown* unkFactory)
 	{
+		// Teardown in progress / subsystem disabled - do not install new hooks.
+		if (!g_dxgiHooksActive.load(std::memory_order_acquire)) {
+			return;
+		}
+
 		if (orgEnumAdapters &&
 			orgEnumAdapters1 &&
 			orgEnumAdapterByLuid &&
@@ -637,6 +815,10 @@ namespace DXGI
 
 		std::lock_guard<std::mutex> lock(dxgiFactoryMutex);
 
+		// Re-check after acquiring the lock.
+		if (!g_dxgiHooksActive.load(std::memory_order_acquire)) {
+			return;
+		}
 		if (orgEnumAdapters &&
 			orgEnumAdapters1 &&
 			orgEnumAdapterByLuid &&

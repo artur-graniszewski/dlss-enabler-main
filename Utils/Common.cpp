@@ -39,6 +39,23 @@ bool Common::IsPluginPresent(LPCWSTR libFileName)
 	return true;
 }
 
+std::wstring Common::GetProcessFileName()
+{
+	wchar_t fileName[MAX_PATH] = {};
+	DWORD size = MAX_PATH;
+
+	if (!QueryFullProcessImageNameW(GetCurrentProcess(), 0, fileName, &size))
+		return {};
+
+	std::wstring fullPath(fileName, size);
+
+	size_t pos = fullPath.rfind(L'\\');
+	if (pos != std::wstring::npos)
+		return fullPath.substr(pos + 1);
+
+	return fullPath;
+}
+
 void Common::SetProcAddress(GetProcAddress_t proc)
 {
 	OriginalGetProcAddress = proc;
@@ -324,7 +341,7 @@ void Common::Info(const std::wstring& reason)
 void Common::CheckModConflict()
 {
 	// List of files to check for conflicts
-	std::vector<std::string> fileNames = { "dxgi.dll", "psapi.dll", "winhttp.dll", "version.dll", "winmm.dll", "dbghelp.dll", "dlss-enabler.asi"};
+	std::vector<std::string> fileNames = { "dxgi.dll", "psapi.dll", "winhttp.dll", "version.dll", "winmm.dll", "dbghelp.dll", "dlss-enabler.asi", "dlss-enabler-headless.dll" };
 	auto reportedFileName = GetModuleFilePath().filename().string();
 	std::string currentFileName;
 	currentFileName.reserve(reportedFileName.length());

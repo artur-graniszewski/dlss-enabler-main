@@ -14,6 +14,7 @@ namespace NVAPI
 		// no statics, no caching, as some engines might load/unload NVAPI multiple times
 		// it seems its safe to assume that the latest NVAPI instance is OK to use.
 		auto realNvAPI = GetModuleHandleW(L"nvapi64.dll");
+
 		if (realNvAPI && !ctx.nvapi.isEmbeddedNvapiUsed) {
 			OriginalNvAPI_QueryInterface = (nvapi_QueryInterface_t)OrgGetProcAddress(realNvAPI, "nvapi_QueryInterface");
 		}
@@ -49,10 +50,17 @@ namespace NVAPI
 			if (function == NVAPI_D3D_SLEEP) {
 				org_NvAPI_D3D_Sleep = (NvAPI_D3D_Sleep_t)OriginalNvAPI_QueryInterface(function);
 			}
+
+			if (!org_NvAPI_DRS_GetSetting) {
+				org_NvAPI_DRS_GetSetting = (NvAPI_DRS_GetSetting_t)OriginalNvAPI_QueryInterface(NVAPI_DRS_GET_SETTING_ID);
+			}
 		}
 
 		// 692
 		switch (function) {
+		//case 0x84f2a8dfL: return NvAPI_Disp_GetHdrCapabilities;
+
+
 			case NVAPI_INITIALIZE: return NvAPI_Initialize;
 			case 0xad298d3fL: return NvAPI_InitializeEx; // implementing missing function
 			case NVAPI_UNLOAD_EX: return NvAPI_UnloadEx; // implementing missing function
@@ -60,8 +68,10 @@ namespace NVAPI
 			case NVAPI_D3D_SET_SLEEP_MODE: return NvAPI_D3D_SetSleepMode;
 			case NVAPI_D3D_GET_LATENCY: return NvAPI_D3D_GetLatency;
 			case NVAPI_D3D_SLEEP: return NvAPI_D3D_Sleep;
-			case NVAPI_GPU_GET_ARCH_INFO: return NvAPI_GPU_GetArchInfo;
 			case NVAPI_D3D_SET_LATENCY_MARKER: return NvAPI_D3D_SetLatencyMarker;
+			case NVAPI_GPU_GET_ARCH_INFO: return NvAPI_GPU_GetArchInfo;
+
+			case 0x73bf8338L: return NvAPI_DRS_GetSetting;
 		}
 
 		if (!ctx.nvapi.isEmbeddedNvapiUsed && ctx.quickBoot) switch (function) {

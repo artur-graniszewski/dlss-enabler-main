@@ -1,8 +1,9 @@
-#include <wtypes.h>
+﻿#include <wtypes.h>
 #include <dxgi1_6.h>
 #include <d3d11.h>
 #include <d3d12.h>
 #include <mutex>
+#include <atomic>
 #include "Common.h"
 #include "../Detours/detours.h"
 #include "../Core/Context.h"
@@ -11,6 +12,18 @@
 #include "SwapChainEvents.h"
 #include "OverdriveController.h"
 #include "UxHook.h"
+
+// Master switch for the swapchain hook subsystem.
+// Set to true by EnableSwapchainHooks() (called from HookDxgi::Install).
+// Set to false by DisableSwapchainHooks() (called from HookDxgi::Uninstall).
+// While false, DetourSwapChain1 / DetourPresent / DetourInitThread must not install
+// any new detours - this gives TeardownSwapchainProxy() a stable state to detach from.
+static std::atomic<bool> g_swapchainHooksActive{ false };
+
+// Serializes DetourSwapChain1 across concurrent swapchain creations.
+// Without this, multi-threaded swapchain creation (rare but legal) would race
+// the double-attach guard below and re-patch already-patched Present code.
+static std::mutex swapchainDetourMutex;
 
 // Original function pointers
 static PresentFn originalPresent = nullptr;
@@ -31,17 +44,29 @@ static int present1Called = 0;
 
 // =============================================================================
 // Helper: Safely try to get D3D12 CommandQueue from pDevice
-// Returns true if D3D12 CommandQueue was found and set
+// Returns the command queue pointer if found, nullptr otherwise.
+// The returned pointer has been AddRef'd and must be Released by the caller.
 // =============================================================================
-static bool TryGetD3D12CommandQueue(IUnknown* pDevice, const wchar_t* callerName)
+static ID3D12CommandQueue* TryGetD3D12CommandQueuePtr(IUnknown* pDevice, const wchar_t* callerName)
 {
 	if (!pDevice)
-		return false;
+		return nullptr;
 
 	// Method 1: Try QueryInterface for ID3D12CommandQueue
 	ID3D12CommandQueue* pQueue = nullptr;
 	if (SUCCEEDED(pDevice->QueryInterface(IID_PPV_ARGS(&pQueue)))) {
 		LOG_DEBUG(std::wstring(L"[DXGI] ") + callerName + L": Got CommandQueue via QueryInterface");
+		return pQueue; // caller owns the ref
+	}
+
+	return nullptr;
+}
+
+// Original helper that also sets UxHook � calls the new one internally
+static bool TryGetD3D12CommandQueue(IUnknown* pDevice, const wchar_t* callerName)
+{
+	ID3D12CommandQueue* pQueue = TryGetD3D12CommandQueuePtr(pDevice, callerName);
+	if (pQueue) {
 		UxHook::SetSwapChainCommandQueue(pQueue);
 		pQueue->Release();
 		return true;
@@ -113,30 +138,30 @@ static HRESULT WINAPI prePresentHook(IDXGISwapChain* pSwapChain, UINT& SyncInter
 		return S_OK;
 
 	if (ctx.ngx.isDynamicFrameGenerationEnabled)
-	//LOG_WARNING(L"AFG: " + std::to_wstring(ctx.ngx.isDynamicFrameGenerationEnabled) + L", GEN: " 
-	//	+ std::to_wstring(ctx.ngx.isGeneratingFrames) + L", MAX:" + std::to_wstring(ctx.ngx.maxFramesGenerated));
+		//LOG_WARNING(L"AFG: " + std::to_wstring(ctx.ngx.isDynamicFrameGenerationEnabled) + L", GEN: " 
+		//	+ std::to_wstring(ctx.ngx.isGeneratingFrames) + L", MAX:" + std::to_wstring(ctx.ngx.maxFramesGenerated));
 
-	// Frame skipping for dynamic FG mode when not generating
-	// Skip X frames where X = framesGenerated (e.g., skip 3 out of 4 for 4X mode)
-	if (ctx.ngx.isDynamicFrameGenerationEnabled &&
-		!ctx.ngx.isGeneratingFrames &&
-		ctx.ngx.framesGenerated >= 0)
-	{
-		g_FrameSkipCounter++;
-
-		// Skip this frame if not at the Nth frame
-		// framesGenerated = 3 means 4X mode, so present every 4th frame (skip 3)
-		UINT skipCount = ctx.ngx.maxFramesGenerated + 1;
-		if (g_FrameSkipCounter < skipCount)
+		// Frame skipping for dynamic FG mode when not generating
+		// Skip X frames where X = framesGenerated (e.g., skip 3 out of 4 for 4X mode)
+		if (ctx.ngx.isDynamicFrameGenerationEnabled &&
+			!ctx.ngx.isGeneratingFrames &&
+			ctx.ngx.framesGenerated >= 0)
 		{
-			// Skip this present by using TEST flag
-			PresentFlags = DXGI_PRESENT_TEST;
-			return S_OK;
-		}
+			g_FrameSkipCounter++;
 
-		// Reset counter, allow this present through
-		g_FrameSkipCounter = 0;
-	}
+			// Skip this frame if not at the Nth frame
+			// framesGenerated = 3 means 4X mode, so present every 4th frame (skip 3)
+			UINT skipCount = ctx.ngx.maxFramesGenerated + 1;
+			if (g_FrameSkipCounter < skipCount)
+			{
+				// Skip this present by using TEST flag
+				PresentFlags = DXGI_PRESENT_TEST;
+				return S_OK;
+			}
+
+			// Reset counter, allow this present through
+			g_FrameSkipCounter = 0;
+		}
 
 	// Store original SyncInterval for FPS monitoring
 	UINT originalSyncInterval = SyncInterval;
@@ -364,6 +389,9 @@ HRESULT WINAPI hookedPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT
 	// Dispatch pre-present to listeners
 	SwapChainEvents::DispatchPrePresent(pSwapChain, SyncInterval, Flags);
 
+	// Render ImGui overlay (direct detour path)
+	UxHook::RenderOverlay(pSwapChain);
+
 	// original Present
 	auto result = originalPresent(pSwapChain, SyncInterval, Flags);
 
@@ -427,6 +455,9 @@ HRESULT WINAPI hookedPresent1(IDXGISwapChain1* pSwapChain, UINT SyncInterval, UI
 	// Dispatch pre-present1 to listeners
 	SwapChainEvents::DispatchPrePresent1(pSwapChain, SyncInterval, Flags, pPresentParameters);
 
+	// Render ImGui overlay (direct detour path)
+	UxHook::RenderOverlay(pSwapChain);
+
 	auto result = originalPresent1(pSwapChain, SyncInterval, Flags, pPresentParameters);
 
 	// Dispatch post-present1 to listeners
@@ -444,6 +475,11 @@ HRESULT WINAPI hookedPresent1(IDXGISwapChain1* pSwapChain, UINT SyncInterval, UI
 DWORD WINAPI DetourInitThread(LPVOID lpParam)
 {
 	Sleep(100);
+
+	// Uninstall may have fired during the sleep; bail out before touching anything.
+	if (!g_swapchainHooksActive.load(std::memory_order_acquire)) {
+		return 0;
+	}
 
 	// Retrieve the virtual table (vtable) for the swapchain
 	IDXGISwapChain* pSwapChain = (IDXGISwapChain*)lpParam;
@@ -464,6 +500,11 @@ DWORD WINAPI DetourInitThread(LPVOID lpParam)
 
 void DetourPresent(IDXGISwapChain* pSwapChain)
 {
+	// Do not spawn the hijack-recovery thread while the subsystem is disabled.
+	if (!g_swapchainHooksActive.load(std::memory_order_acquire)) {
+		return;
+	}
+
 	void** pVTable = *reinterpret_cast<void***>(pSwapChain);
 	bool isHooked = (pVTable[8] == hookedPresent);
 
@@ -479,6 +520,31 @@ void DetourSwapChain1(void** pVTable)
 		return;
 	}
 
+	// Teardown in progress / not yet installed - do not attach.
+	if (!g_swapchainHooksActive.load(std::memory_order_acquire)) {
+		return;
+	}
+
+	// Fast path: hooks already installed on a previous swapchain. The vtable slots
+	// for Present / Present1 resolve to the same addresses in dxgi.dll regardless
+	// of the swapchain instance, so re-attaching for every new swapchain would
+	// double-patch already-patched code.
+	if (originalPresent) {
+		return;
+	}
+
+	// Double-checked locking: game may create swapchains from several threads.
+	std::lock_guard<std::mutex> lock(swapchainDetourMutex);
+
+	// Re-check after acquiring the lock, and re-check the master flag in case
+	// Uninstall raced between the first check and the lock acquisition.
+	if (!g_swapchainHooksActive.load(std::memory_order_acquire)) {
+		return;
+	}
+	if (originalPresent) {
+		return;
+	}
+
 	DetourTransactionBegin();
 	DetourUpdateThread(GetCurrentThread());
 	originalPresent = (PresentFn)pVTable[8];
@@ -488,6 +554,58 @@ void DetourSwapChain1(void** pVTable)
 	DetourAttach(&(PVOID&)originalPresent1, hookedPresent1);
 	DetourTransactionCommit();
 	LOG_DEBUG(L"[DXGI] DetourSwapChain1: Detour set up for Present/Present1");
+}
+
+// =============================================================================
+// Helper: Create the wrapped swapchain with command queue from pDevice
+// =============================================================================
+
+static DxgiWrappedIDXGISwapChain4* CreateWrappedSwapChain(IDXGISwapChain* pSwapChain, IUnknown* pDevice)
+{
+	// Try to get the command queue from pDevice.
+	// In D3D12, CreateSwapChainForHwnd receives the command queue as pDevice.
+	// We pass it to the wrapper so REFramework's object scan finds it immediately
+	// and doesn't enter the Proton/FrameGen detection path.
+	ID3D12CommandQueue* pQueue = nullptr;
+	if (pDevice) {
+		pDevice->QueryInterface(IID_PPV_ARGS(&pQueue));
+	}
+
+	auto* wrapped = new DxgiWrappedIDXGISwapChain4(
+		pSwapChain,
+		prePresentHook, postPresentHook,
+		prePresent1Hook, postPresent1Hook,
+		preResizeBuffersHook, postResizeBuffersHook,
+		pQueue
+	);
+
+	if (pQueue) {
+		pQueue->Release(); // wrapper took its own AddRef
+	}
+
+	return wrapped;
+}
+
+static DxgiWrappedIDXGISwapChain4* CreateWrappedSwapChain1(IDXGISwapChain1* pSwapChain, IUnknown* pDevice)
+{
+	ID3D12CommandQueue* pQueue = nullptr;
+	if (pDevice) {
+		pDevice->QueryInterface(IID_PPV_ARGS(&pQueue));
+	}
+
+	auto* wrapped = new DxgiWrappedIDXGISwapChain4(
+		pSwapChain,
+		prePresentHook, postPresentHook,
+		prePresent1Hook, postPresent1Hook,
+		preResizeBuffersHook, postResizeBuffersHook,
+		pQueue
+	);
+
+	if (pQueue) {
+		pQueue->Release();
+	}
+
+	return wrapped;
 }
 
 static bool isSwapchainBeingWrapped = false;
@@ -524,7 +642,7 @@ HRESULT WINAPI proxy_CreateSwapChain(IDXGIFactory* pFactory, IUnknown* pDevice, 
 			else if (!wasWrapped) {
 				void* pCustomInterface;
 				if (FAILED((*ppSwapChain)->QueryInterface(__uuidof(IDXGISwapChain4Interface), (void**)&pCustomInterface))) {
-					*ppSwapChain = new DxgiWrappedIDXGISwapChain4((*ppSwapChain), prePresentHook, postPresentHook, prePresent1Hook, postPresent1Hook, preResizeBuffersHook, postResizeBuffersHook);
+					*ppSwapChain = CreateWrappedSwapChain(*ppSwapChain, pDevice);
 				}
 			}
 		}
@@ -612,7 +730,9 @@ HRESULT WINAPI proxy_CreateSwapChainForHwnd(IDXGIFactory* pFactory, IUnknown* pD
 			else if (!wasWrapped) {
 				void* pCustomInterface;
 				if (FAILED((*ppSwapChain)->QueryInterface(__uuidof(IDXGISwapChain4Interface), (void**)&pCustomInterface))) {
-					*ppSwapChain = new DxgiWrappedIDXGISwapChain4((*ppSwapChain), prePresentHook, postPresentHook, prePresent1Hook, postPresent1Hook, preResizeBuffersHook, postResizeBuffersHook);
+					*ppSwapChain = reinterpret_cast<IDXGISwapChain1*>(
+						CreateWrappedSwapChain1(*ppSwapChain, pDevice)
+						);
 				}
 			}
 		}
@@ -668,7 +788,9 @@ HRESULT WINAPI proxy_CreateSwapChainForCoreWindow(IDXGIFactory* pFactory, IUnkno
 			else if (!wasWrapped) {
 				void* pCustomInterface;
 				if (FAILED((*ppSwapChain)->QueryInterface(__uuidof(IDXGISwapChain4Interface), (void**)&pCustomInterface))) {
-					*ppSwapChain = new DxgiWrappedIDXGISwapChain4((*ppSwapChain), prePresentHook, postPresentHook, prePresent1Hook, postPresent1Hook, preResizeBuffersHook, postResizeBuffersHook);
+					*ppSwapChain = reinterpret_cast<IDXGISwapChain1*>(
+						CreateWrappedSwapChain1(*ppSwapChain, pDevice)
+						);
 				}
 			}
 		}
@@ -698,7 +820,7 @@ HRESULT WINAPI proxy_CreateSwapChainForComposition(IDXGIFactory* pFactory, IUnkn
 		LOG_DEBUG(L"[DXGI] CreateSwapChainForComposition: using " + std::to_wstring(descCopy.BufferCount) + L" buffer(s)");
 		LOG_DEBUG(L"[DXGI] CreateSwapChainForComposition: swapchain swap effect set to " + std::to_wstring(pDesc->SwapEffect));
 		LOG_DEBUG(L"[DXGI] CreateSwapChainForComposition: swapchain resolution is " + std::to_wstring(descCopy.Width) + L"x" + std::to_wstring(descCopy.Height));
-	} 
+	}
 
 	auto wasWrapped = isSwapchainBeingWrapped;
 	isSwapchainBeingWrapped = true;
@@ -717,7 +839,9 @@ HRESULT WINAPI proxy_CreateSwapChainForComposition(IDXGIFactory* pFactory, IUnkn
 			else if (!wasWrapped) {
 				void* pCustomInterface;
 				if (FAILED((*ppSwapChain)->QueryInterface(__uuidof(IDXGISwapChain4Interface), (void**)&pCustomInterface))) {
-					*ppSwapChain = new DxgiWrappedIDXGISwapChain4((*ppSwapChain), prePresentHook, postPresentHook, prePresent1Hook, postPresent1Hook, preResizeBuffersHook, postResizeBuffersHook);
+					*ppSwapChain = reinterpret_cast<IDXGISwapChain1*>(
+						CreateWrappedSwapChain1(*ppSwapChain, pDevice)
+						);
 				}
 			}
 		}
@@ -732,4 +856,74 @@ HRESULT WINAPI proxy_CreateSwapChainForComposition(IDXGIFactory* pFactory, IUnkn
 		LOG_DEBUG(L"[DXGI] CreateSwapChainForComposition: succeeded");
 	}
 	return result;
+}
+
+// =============================================================================
+// Subsystem lifecycle - called by HookDxgi::Install / Uninstall
+// =============================================================================
+
+void EnableSwapchainHooks()
+{
+	g_swapchainHooksActive.store(true, std::memory_order_release);
+}
+
+void DisableSwapchainHooks()
+{
+	// Block any new attach attempts from DetourSwapChain1 / DetourInitThread /
+	// DetourPresent. Existing in-flight calls holding swapchainDetourMutex will
+	// re-check the flag after acquiring the lock and bail out.
+	g_swapchainHooksActive.store(false, std::memory_order_release);
+}
+
+void TeardownSwapchainProxy()
+{
+	// Serialize against any DetourSwapChain1 call that already passed the flag
+	// check but not yet reached the transaction. DisableSwapchainHooks() must
+	// have been called before this; the mutex just ensures we wait out any
+	// in-flight attach that started before the flag was lowered.
+	std::lock_guard<std::mutex> lock(swapchainDetourMutex);
+
+	// Nothing to do if no hooks were ever installed.
+	bool anyInstalled = originalPresent || originalPresent1
+		|| orgCreateSwapChain || orgCreateSwapChainForHwnd
+		|| orgCreateSwapChainForCoreWindow || orgCreateSwapChainForComposition;
+	if (!anyInstalled) {
+		return;
+	}
+
+	LOG_INFO(L"[DXGI] Unhooking swap chain functions...");
+
+	DetourTransactionBegin();
+	DetourUpdateThread(GetCurrentThread());
+
+	// Detach in reverse order of attach. Trampoline pointers are intentionally
+	// NOT nulled afterwards: any in-flight hookedPresent / proxy_CreateSwapChain*
+	// handler on another thread may still read them. Post-detach they point at
+	// the original function in dxgi.dll (Detours restored the first bytes), so
+	// invoking them is safe and simply calls through to the real implementation.
+	if (originalPresent1) {
+		DetourDetach(&(PVOID&)originalPresent1, hookedPresent1);
+	}
+	if (originalPresent) {
+		DetourDetach(&(PVOID&)originalPresent, hookedPresent);
+	}
+	if (orgCreateSwapChainForComposition) {
+		DetourDetach(&(PVOID&)orgCreateSwapChainForComposition, proxy_CreateSwapChainForComposition);
+	}
+	if (orgCreateSwapChainForCoreWindow) {
+		DetourDetach(&(PVOID&)orgCreateSwapChainForCoreWindow, proxy_CreateSwapChainForCoreWindow);
+	}
+	if (orgCreateSwapChainForHwnd) {
+		DetourDetach(&(PVOID&)orgCreateSwapChainForHwnd, proxy_CreateSwapChainForHwnd);
+	}
+	if (orgCreateSwapChain) {
+		DetourDetach(&(PVOID&)orgCreateSwapChain, proxy_CreateSwapChain);
+	}
+
+	if (DetourTransactionCommit() != NO_ERROR) {
+		LOG_ERROR(L"[DXGI] Failed to detach swap chain hooks");
+		return;
+	}
+
+	LOG_INFO(L"[DXGI] Swap chain functions unhooked");
 }

@@ -14,6 +14,7 @@ struct IDetourApi {
     virtual bool TransactionBegin() = 0;
     virtual void UpdateThread(HANDLE hThread) = 0;
     virtual bool Attach(AttachRequest req) = 0;
+    virtual bool Detach(AttachRequest req) = 0;
 
     virtual bool CommitEx(PVOID** pFailed = nullptr) = 0;
 

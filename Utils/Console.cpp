@@ -211,7 +211,7 @@ void Console::EnableLogging(bool enable)
     logger->set_pattern("%v");
 
     // Flush on error level
-    logger->flush_on(spdlog::level::err);
+    logger->flush_on(spdlog::level::trace);
 
     S.logger = std::move(logger);
     S.loggingEnabled = true;

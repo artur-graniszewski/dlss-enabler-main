@@ -16,5 +16,9 @@ bool DetourApiDetours::CommitEx(PVOID** pFailed) {
 FARPROC DetourApiDetours::FindFunction(const char* m, const char* n) {
     return reinterpret_cast<FARPROC>(DetourFindFunction(m, n));
 }
+
+bool DetourApiDetours::Detach(AttachRequest r) {
+    return DetourDetach(reinterpret_cast<PVOID*>(r.ppTarget), r.pDetour) == NO_ERROR;
+}
 HMODULE DetourApiDetours::GetModHandleW(const wchar_t* n) { return ::GetModuleHandleW(n); }
 FARPROC DetourApiDetours::GetProc(HMODULE h, const char* n) { return OriginalGetProcAddress(h, n); } 

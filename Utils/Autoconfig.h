@@ -12,5 +12,5 @@ public:
 private:
 	static void CheckCommandLineParams();
 	static void CheckIniFile();
-};
+}; 
 

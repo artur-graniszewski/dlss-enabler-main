@@ -1,12 +1,22 @@
 #include <wtypes.h>
 #include <cstdint>
 #include <d3d12.h>
-
+#include <dxgi1_6.h>
+#include <unordered_map>
 #include <string>
+#include <mutex>
 #include "Common.h"
 #include "../Detours/detours.h"
 #include "../Core/Context.h"
 #include "StreamlineProxy.h"
+#include "SwapChainEvents.h"
+#include "OverdriveController.h"
+#include "UxHook.h"
+
+// When defined, forces Streamline to use a DXGI factory proxy instead of
+// modifying the v-table of the base interface.  This reduces the risk of
+// conflicts with 3rd-party overlays and our own DXGI hooks.
+//#define SL_USE_DXGI_FACTORY_PROXY
 
 HMODULE GetCustomInterposer()
 {
@@ -41,8 +51,8 @@ extern SL3ARGS original_slAllocateResources;
 extern SLFEATUREARGS original_slEvaluateFeature;
 extern SL1ARG original_slUpgradeInterface;
 extern SL1ARG original_slSetD3DDevice;
-extern SL1ARG original_slSetVulkanInfo ;
-extern SL2ARGS original_CreateDXGIFactory ;
+extern SL1ARG original_slSetVulkanInfo;
+extern SL2ARGS original_CreateDXGIFactory;
 extern SL2ARGS original_CreateDXGIFactory1;
 extern SL3ARGS original_CreateDXGIFactory2;
 extern SL3ARGS original_D3D12SerializeVersionedRootSignature;
@@ -165,20 +175,184 @@ int detoured_slSetTagForWitcherFixed(const ResourceV1* resource, BufferType tag,
 	return result;
 }
 
+// =============================================================================
+// Streamline Present hooks - full present pipeline for SL-managed swapchains
+// Replicates prePresentHook/postPresentHook from Wrapped_Swapchain path
+// Active only when ctx.streamline.isPresentHookEnabled == true
+// =============================================================================
+
+static UINT g_SlFrameSkipCounter = 0;
+
+static void slOnPrePresent()
+{
+	static uint64_t lastCycleId = 0;
+
+	if (lastCycleId != ctx.reflex.optiFgCycle) {
+		lastCycleId = ctx.reflex.optiFgCycle;
+		ctx.reflex.isOptiFgEnabled = true;
+	}
+	else {
+		ctx.reflex.optiFgCycle = 0;
+		ctx.reflex.isOptiFgEnabled = 0;
+	}
+
+	if (ctx.logging.isReflexDebugEnabled) {
+		LOG_WARNING(L"< PRESENT (SL)");
+	}
+}
+
 int detoured_slHookPresent(void* arg, void* arg2, void* arg3, void* arg4)
 {
-	//LOG_WARNING(std::wstring(L"========= ") + __FUNCTIONW__);
+	IDXGISwapChain* pSwapChain = reinterpret_cast<IDXGISwapChain*>(arg);
+	UINT SyncInterval = static_cast<UINT>(reinterpret_cast<uintptr_t>(arg2));
+	UINT PresentFlags = static_cast<UINT>(reinterpret_cast<uintptr_t>(arg3));
 
-	int result = original_slHookPresent(arg, arg2, arg3, arg4);
+	// Skip test/restart frames
+	if ((PresentFlags & DXGI_PRESENT_TEST) || (PresentFlags & DXGI_PRESENT_RESTART))
+		return original_slHookPresent(arg, arg2, arg3, arg4);
+
+	static bool s_FirstCall = false;
+	if (!s_FirstCall) {
+		s_FirstCall = true;
+		LOG_INFO(L"[STREAMLINE] slHookPresent: first call on tid "
+			+ std::to_wstring(GetCurrentThreadId())
+			+ L" swapchain=0x" + std::to_wstring(reinterpret_cast<uintptr_t>(arg)));
+	}
+
+	// Frame skipping for dynamic FG mode when not generating
+	if (ctx.ngx.isDynamicFrameGenerationEnabled &&
+		!ctx.ngx.isGeneratingFrames &&
+		ctx.ngx.framesGenerated >= 0)
+	{
+		g_SlFrameSkipCounter++;
+		UINT skipCount = ctx.ngx.maxFramesGenerated + 1;
+		if (g_SlFrameSkipCounter < skipCount)
+		{
+			PresentFlags = DXGI_PRESENT_TEST;
+			return original_slHookPresent(arg, arg2,
+				reinterpret_cast<void*>(static_cast<uintptr_t>(PresentFlags)), arg4);
+		}
+		g_SlFrameSkipCounter = 0;
+	}
+
+	// Store original SyncInterval for FPS monitoring
+	UINT originalSyncInterval = SyncInterval;
+
+	// Detect if game is using VSync natively (this frame)
+	ctx.reflex.isGameVsyncEnabled = (SyncInterval > 0);
+
+	// Detect if game is using tearing mode THIS FRAME (VRR/G-Sync/FreeSync)
+	ctx.reflex.isGameTearingEnabled = (PresentFlags & DXGI_PRESENT_ALLOW_TEARING) != 0;
+
+	// Apply VSync override only if enabled
+	if (OverdriveController::GetVsyncOverrideEnabled()) {
+		if (OverdriveController::GetVsyncEnabled()) {
+			if (ctx.reflex.isGameTearingEnabled) {
+				PresentFlags &= ~DXGI_PRESENT_ALLOW_TEARING;
+			}
+			SyncInterval = 1;
+		}
+		else {
+			SyncInterval = 0;
+		}
+	}
+
+	// Store effective SyncInterval for FPS monitor
+	ctx.reflex.lastSyncInterval = SyncInterval;
+	ctx.reflex.lastOriginalSyncInterval = originalSyncInterval;
+
+	slOnPrePresent();
+
+	// Dispatch to all registered listeners
+	SwapChainEvents::DispatchPrePresent(pSwapChain, SyncInterval, PresentFlags);
+
+	// Render ImGui overlay
+	UxHook::RenderOverlay(pSwapChain);
+
+	// Call original Streamline Present with (potentially modified) args
+	int result = original_slHookPresent(
+		arg,
+		reinterpret_cast<void*>(static_cast<uintptr_t>(SyncInterval)),
+		reinterpret_cast<void*>(static_cast<uintptr_t>(PresentFlags)),
+		arg4);
+
+	// Post-present
+	SwapChainEvents::DispatchPostPresent(pSwapChain, SyncInterval, PresentFlags, static_cast<HRESULT>(result));
 
 	return result;
 }
 
-int detoured_slHookPresent1(void* arg, void* arg2, void* arg3, void* arg4, void *arg5)
+int detoured_slHookPresent1(void* arg, void* arg2, void* arg3, void* arg4, void* arg5)
 {
-	//LOG_WARNING(std::wstring(L"========= ") + __FUNCTIONW__);
+	IDXGISwapChain1* pSwapChain = reinterpret_cast<IDXGISwapChain1*>(arg);
+	UINT SyncInterval = static_cast<UINT>(reinterpret_cast<uintptr_t>(arg2));
+	UINT PresentFlags = static_cast<UINT>(reinterpret_cast<uintptr_t>(arg3));
+	const DXGI_PRESENT_PARAMETERS* pParams = reinterpret_cast<const DXGI_PRESENT_PARAMETERS*>(arg4);
 
-	int result = original_slHookPresent1(arg, arg2, arg3, arg4, arg5);
+	// Skip test/restart frames
+	if ((PresentFlags & DXGI_PRESENT_TEST) || (PresentFlags & DXGI_PRESENT_RESTART))
+		return original_slHookPresent1(arg, arg2, arg3, arg4, arg5);
+
+	static bool s_FirstCall1 = false;
+	if (!s_FirstCall1) {
+		s_FirstCall1 = true;
+		LOG_INFO(L"[STREAMLINE] slHookPresent1: first call on tid "
+			+ std::to_wstring(GetCurrentThreadId())
+			+ L" swapchain=0x" + std::to_wstring(reinterpret_cast<uintptr_t>(arg)));
+	}
+
+	// Frame skipping for dynamic FG mode
+	if (ctx.ngx.isDynamicFrameGenerationEnabled &&
+		!ctx.ngx.isGeneratingFrames &&
+		ctx.ngx.framesGenerated >= 0)
+	{
+		g_SlFrameSkipCounter++;
+		UINT skipCount = ctx.ngx.maxFramesGenerated + 1;
+		if (g_SlFrameSkipCounter < skipCount)
+		{
+			PresentFlags = DXGI_PRESENT_TEST;
+			return original_slHookPresent1(arg, arg2,
+				reinterpret_cast<void*>(static_cast<uintptr_t>(PresentFlags)), arg4, arg5);
+		}
+		g_SlFrameSkipCounter = 0;
+	}
+
+	UINT originalSyncInterval = SyncInterval;
+	ctx.reflex.isGameVsyncEnabled = (SyncInterval > 0);
+	ctx.reflex.isGameTearingEnabled = (PresentFlags & DXGI_PRESENT_ALLOW_TEARING) != 0;
+
+	if (OverdriveController::GetVsyncOverrideEnabled()) {
+		if (OverdriveController::GetVsyncEnabled()) {
+			if (ctx.reflex.isGameTearingEnabled) {
+				PresentFlags &= ~DXGI_PRESENT_ALLOW_TEARING;
+			}
+			SyncInterval = 1;
+		}
+		else {
+			SyncInterval = 0;
+		}
+	}
+
+	ctx.reflex.lastSyncInterval = SyncInterval;
+	ctx.reflex.lastOriginalSyncInterval = originalSyncInterval;
+
+	slOnPrePresent();
+
+	// Dispatch to all registered listeners
+	SwapChainEvents::DispatchPrePresent1(pSwapChain, SyncInterval, PresentFlags, pParams);
+
+	// Render ImGui overlay
+	UxHook::RenderOverlay(pSwapChain);
+
+	// Call original with modified args
+	int result = original_slHookPresent1(
+		arg,
+		reinterpret_cast<void*>(static_cast<uintptr_t>(SyncInterval)),
+		reinterpret_cast<void*>(static_cast<uintptr_t>(PresentFlags)),
+		arg4, arg5);
+
+	// Post-present
+	SwapChainEvents::DispatchPostPresent1(pSwapChain, SyncInterval, PresentFlags, static_cast<HRESULT>(result));
 
 	return result;
 }
@@ -371,7 +545,7 @@ HRESULT WINAPI detoured_CreateDXGIFactory2(void* arg, void* arg2, void* arg3)
 	SL3ARGS tmp = (SL3ARGS)GetProcAddress(GetCustomInterposer(), "CreateDXGIFactory2");
 
 	HRESULT result = tmp(arg, arg2, arg3);
-	//LOG_WARNING(std::wstring(L"==OK===== ") + __FUNCTIONW__);
+	LOG_WARNING(std::wstring(L"==OK===== ") + __FUNCTIONW__);
 
 	return result;
 }
@@ -417,14 +591,14 @@ int detoured_slIsFeatureSupported(void* arg, void* arg2, void* arg3)
 void LogMessageCallback(LogType type, const char* msg)
 {
 	if (!ctx.logging.isStreamlineDebugEnabled) {
-		return;
+		//return;
 	}
-	return;
+	//return;
 	std::wstring logEntry = ToWideString(std::string(msg));
 
 	// find the last bracket (surrounding function name)
 	size_t pos1 = logEntry.find(L"] ");
-	
+
 	// get the actual message after function name
 	auto message = logEntry.substr(pos1 + 2);
 	size_t pos0 = logEntry.rfind(L"[", pos1);
@@ -451,6 +625,35 @@ void LogMessageCallback(LogType type, const char* msg)
 	}
 
 	logEntry = L"[STREAMLINE] " + logEntry;
+
+	// Throttle spammy log messages - mute after 10 occurrences
+	static const std::vector<std::wstring> throttledPrefixes = {
+		L"UI buffer extent does not match color buffer size",
+		L"HUD-less buffer extent does not match color buffer size",
+		L"ProcessEvaluateParams Render Size:",
+		L"dlfgPresent::updateStatus: eDLSSGStatusFailReflexNotDetectedAtRuntime:",
+		L"Exceeded VRAM budget, various performance issues including stuttering can be expected",
+		L"not set yet"
+	};
+
+	static std::unordered_map<std::wstring, int> throttleCounts;
+	constexpr int MAX_LOG_REPEATS = 10;
+
+	for (const auto& prefix : throttledPrefixes) {
+		if (message.find(prefix) != std::wstring::npos) {
+			int& count = throttleCounts[prefix];
+			count++;
+			if (count == MAX_LOG_REPEATS + 1) {
+				LOG_WARNING(L"[STREAMLINE] Log entry \"" + prefix + L"...\" repeated more than "
+					+ std::to_wstring(MAX_LOG_REPEATS) + L" times, further occurrences will be muted");
+			}
+			if (count > MAX_LOG_REPEATS) {
+				return;
+			}
+			break;
+		}
+	}
+
 	switch (type) {
 	case LogType::eError:
 		LOG_ERROR(logEntry);
@@ -464,7 +667,7 @@ void LogMessageCallback(LogType type, const char* msg)
 	}
 }
 
-static void LoadFeature(Feature* featuresToLoad, size_t& numFeatures, const Feature* newFeatureList, size_t newListSize, size_t maxFeatures, Feature featureToAdd) 
+static void LoadFeature(Feature* featuresToLoad, size_t& numFeatures, const Feature* newFeatureList, size_t newListSize, size_t maxFeatures, Feature featureToAdd)
 {
 	// Ensure we don't exceed the maxFeatures limit
 	size_t featuresToCopy = min(newListSize, maxFeatures);
@@ -488,8 +691,11 @@ int detoured_slInit(Preferences& pref, uint64_t sdkVersion)
 {
 	LOG_INFO(L"[STREAMLINE] Initializing Streamline library");
 
-	//pref.flags = static_cast<PreferenceFlags>((uint64_t)pref.flags | (uint64_t)PreferenceFlags::eUseDXGIFactoryProxy);
 	//pref.flags = static_cast<PreferenceFlags>((uint64_t)pref.flags & ~(uint64_t)PreferenceFlags::eUseDXGIFactoryProxy);
+#ifdef SL_USE_DXGI_FACTORY_PROXY
+	pref.flags = static_cast<PreferenceFlags>((uint64_t)pref.flags | (uint64_t)PreferenceFlags::eUseDXGIFactoryProxy);
+	LOG_INFO(L"[STREAMLINE] eUseDXGIFactoryProxy enabled - using DXGI factory proxy to reduce hook conflicts");
+#endif
 	pref.flags = static_cast<PreferenceFlags>((uint64_t)pref.flags & ~(uint64_t)PreferenceFlags::eAllowOTA);
 	pref.flags = static_cast<PreferenceFlags>((uint64_t)pref.flags & ~(uint64_t)PreferenceFlags::eLoadDownloadedPlugins);
 	//pref.showConsole = true;
@@ -514,7 +720,7 @@ int detoured_slInit(Preferences& pref, uint64_t sdkVersion)
 		}
 	}
 
-	if (ctx.streamline.forceLoadDeepDvc) {
+	if (ctx.streamline.forceLoadDLSSG) {
 		LOG_WARNING(L"[STREAMLINE] Forcefull load of DLSSG");
 		const size_t maxFeatures = 10;
 		Feature featuresToLoad[maxFeatures];
@@ -523,6 +729,23 @@ int detoured_slInit(Preferences& pref, uint64_t sdkVersion)
 
 		// Call the function to replace the feature list
 		LoadFeature(featuresToLoad, numFeatures, pref.featuresToLoad, pref.numFeaturesToLoad, maxFeatures, kFeatureDLSS_G);
+		pref.featuresToLoad = featuresToLoad;
+		pref.numFeaturesToLoad++;
+
+		for (size_t i = 0; i < pref.numFeaturesToLoad; ++i) {
+			LOG_WARNING(L"[STREAMLINE] Loading " + std::to_wstring(pref.featuresToLoad[i]));
+		}
+	}
+
+	if (ctx.nvapi.mfgEnforcedMode > 0 || ctx.streamline.forceLoadDLSSG) {
+		LOG_WARNING(L"[STREAMLINE] Forcefull load of PCL");
+		const size_t maxFeatures = 10;
+		Feature featuresToLoad[maxFeatures];
+
+		size_t numFeatures = 0; // Current number of features in the array
+
+		// Call the function to replace the feature list
+		LoadFeature(featuresToLoad, numFeatures, pref.featuresToLoad, pref.numFeaturesToLoad, maxFeatures, kFeaturePCL);
 		pref.featuresToLoad = featuresToLoad;
 		pref.numFeaturesToLoad++;
 
@@ -549,50 +772,301 @@ int detoured_slEvaluateFeature(Feature feature, void* arg2, void* arg3, void* ar
 	return result;
 }
 
+// Last DLSSGOptions received from the game - preserved so we only override numFramesToGenerate
+static DLSSGOptions g_LastGameDLSSGOptions{};
+static bool g_HasGameDLSSGOptions = false;
+static bool g_IsInternalCall = false; // Guard: true when our mod calls slDLSSGSetOptions
+
+// Mutex protecting all access to original_slDLSSGSetOptions and the state above.
+// Serializes game-initiated calls (slDLSSGSetOptionsWrapper), DFG-initiated calls
+// (ForceApplyMfgMode), and restore calls (RestoreGameDLSSGOptions) so they never
+// race against each other or Streamline internals.
+static std::mutex g_DlssgSetOptionsMutex;
+
+// -----------------------------------------------------------------------------
+// MFG override encoding (ctx.nvapi.mfgEnforcedMode)
+// -----------------------------------------------------------------------------
+//  Value  UI label    Semantics
+//    0    OFF         No override - game fully controls FG
+//    1    x1          Force FG OFF (mode=eOff, numFrames=1)
+//    2    x2          Force FG ON, mode=eOn, numFrames=1 (2X total)
+//    3    x3          Force FG ON, mode=eOn, numFrames=2 (3X total)
+//    4    x4          Force FG ON, mode=eOn, numFrames=3 (4X total)
+//    5    x5          Force FG ON, mode=eOn, numFrames=4 (5X total, needs sl.dlss_g>=2.11)
+//    6    x6          Force FG ON, mode=eOn, numFrames=5 (6X total, needs sl.dlss_g>=2.11)
+//
+// NOTE: ctx.streamline.mfgEnforcedMode (DFG dynamic) still uses RAW numFramesToGenerate
+//       value (0=off, 1=2X, 2=3X, ...). Only the nvapi override uses the new
+//       UI-mnemonic encoding above. Translation happens only at the boundary below.
+// -----------------------------------------------------------------------------
+
+// Translate nvapi override value (UI mnemonic) to raw numFramesToGenerate.
+// Returns 0 when nvapi override is inactive (0=OFF) or when value means "force off" (1=x1).
+// For x1, callers must ALSO set DLSSGMode::eOff - this function only returns the frame count.
+static inline uint32_t NvapiOverrideToNumFrames(int nvapiMode)
+{
+	// 0=OFF, 1=x1 -> no frames (caller handles mode=eOff for x1)
+	// 2=x2 -> 1 frame generated, 3=x3 -> 2, ..., 6=x6 -> 5
+	if (nvapiMode <= 1) return 1;  // x1 still needs numFrames=1 per API ("Must be 1")
+	return static_cast<uint32_t>(nvapiMode - 1);
+}
+
+// Returns true if nvapi override x1 is active (force FG disabled)
+static inline bool NvapiOverrideIsForceOff(int nvapiMode)
+{
+	return nvapiMode == 1;
+}
+
+// Returns true if nvapi override is any "force ON" mode (x2..x6)
+static inline bool NvapiOverrideIsForceOn(int nvapiMode)
+{
+	return nvapiMode >= 2;
+}
+
+// Helper: sends final DLSSG options to Streamline and keeps ctx.ngx.framesGenerated
+// in sync when FG is being turned off. NGX EvaluateFeature only fires while FG is
+// actually generating frames, so if Streamline switches to eOff (either because the
+// game requested it or because we forced it via x1/passthrough of eOff), the status
+// bar needs an explicit zero otherwise it keeps showing the last pre-off value.
+// Caller must hold g_DlssgSetOptionsMutex.
+static int SubmitDLSSGOptionsLocked(void* viewport, const DLSSGOptions& options)
+{
+	if (options.mode == DLSSGMode::eOff)
+	{
+		ctx.ngx.framesGenerated = 0;
+	}
+	return original_slDLSSGSetOptions(viewport, options);
+}
+
+// Wrapper for slDLSSGSetOptions - intercepts game's calls to apply MFG override.
+//
+// Rules (per nvapi override):
+//   OFF:            pass through untouched (game fully controls)
+//   x1 (force off): force mode=eOff regardless of what game requested;
+//                   cache game's requested state so toggling back to OFF restores it
+//   x2..x6 (on):    HONOR game's mode - if game says eOff, pass eOff through;
+//                   if game says eOn/eAuto, override numFramesToGenerate to our target.
+//
+// DFG dynamic (ctx.streamline.mfgEnforcedMode) still uses raw numFramesToGenerate
+// and only applies when nvapi override is OFF.
+int slDLSSGSetOptionsWrapper(void* viewport, const DLSSGOptions& options)
+{
+	std::lock_guard<std::mutex> lock(g_DlssgSetOptionsMutex);
+
+	if (!g_IsInternalCall) {
+		// Always cache what the game requested - we need it for restore/mode-honoring
+		g_LastGameDLSSGOptions = options;
+		g_HasGameDLSSGOptions = true;
+	}
+
+	const int nvapiMode = ctx.nvapi.mfgEnforcedMode;
+
+	// Case: nvapi override = x1 (force FG disabled)
+	if (NvapiOverrideIsForceOff(nvapiMode))
+	{
+		DLSSGOptions modifiedOptions = options;
+		modifiedOptions.mode = DLSSGMode::eOff;
+		modifiedOptions.numFramesToGenerate = 1; // API: "Must be 1"
+		return SubmitDLSSGOptionsLocked(viewport, modifiedOptions);
+	}
+
+	// Case: nvapi override = x2..x6 (force FG on with specific mnemonic)
+	if (NvapiOverrideIsForceOn(nvapiMode))
+	{
+		// Honor game's decision to disable FG - if game says eOff, pass through untouched.
+		if (options.mode == DLSSGMode::eOff)
+			return SubmitDLSSGOptionsLocked(viewport, options);
+
+		// Game wants FG on (eOn or eAuto) - override multiplier to our target.
+		DLSSGOptions modifiedOptions = options;
+		modifiedOptions.numFramesToGenerate = NvapiOverrideToNumFrames(nvapiMode);
+		return SubmitDLSSGOptionsLocked(viewport, modifiedOptions);
+	}
+
+	// Case: nvapi override = OFF - check DFG dynamic fallback
+	if (ctx.streamline.mfgEnforcedMode > 0)
+	{
+		// DFG: only modifies numFramesToGenerate when game has FG enabled;
+		// don't force-enable FG when game disabled it.
+		if (options.mode == DLSSGMode::eOff)
+			return SubmitDLSSGOptionsLocked(viewport, options);
+
+		DLSSGOptions modifiedOptions = options;
+		modifiedOptions.numFramesToGenerate = ctx.streamline.mfgEnforcedMode;
+		return SubmitDLSSGOptionsLocked(viewport, modifiedOptions);
+	}
+
+	// No override active - full passthrough
+	return SubmitDLSSGOptionsLocked(viewport, options);
+}
+
 // slDLSSGSetOptions(const sl::ViewportHandle& viewport, const sl::DLSSGOptions& options)
 
-int slDLSSSetOptions(/*ViewportHandle& viewport*/ void *viewport, void* options)
+int slDLSSSetOptions(/*ViewportHandle& viewport*/ void* viewport, void* options)
 {
 	currentViewPort = viewport;
 	int result = original_slDLSSSetOptions(currentViewPort, options);
 
 	if (!original_slDLSSGSetOptions && ctx.streamline.forceLoadDLSSG) {
 		LOG_ERROR(L"[STREAMLINE] Wrapping slDLSSGSetOptions");
-		void *ptr;
+		void* ptr;
 		original_slGetFeatureFunction(kFeatureDLSS_G, "slDLSSGSetOptions", ptr);
-		original_slDLSSGSetOptions = reinterpret_cast<DLSSGSETOPTS>(ptr);				
-		
+		original_slDLSSGSetOptions = reinterpret_cast<DLSSGSETOPTS>(ptr);
+
 		original_slGetFeatureFunction(kFeatureDeepDVC, "slDeepDVCSetOptions", ptr);
 		original_slDeepDVCSetOptions = reinterpret_cast<DEEPDVCSETOPTS>(ptr);
-		
+
 		if (ctx.streamline.forceLoadDLSSG) {
 			auto slSetFeatureLoaded = (DLSSGSETFEATLOADED)GetProcAddress(GetModuleHandle(TEXT("sl.interposer.dll")), "slSetFeatureLoaded");
 			slSetFeatureLoaded(kFeatureDLSS_G, true);
 		}
 	}
-	
+
 	if (ctx.streamline.forceLoadDeepDvc) {
 		DeepDVCOptions deepDVCOptions = {};
-		deepDVCOptions.mode = DeepDVCMode::eOn; 
-		deepDVCOptions.intensity = ctx.deepDVC.intensity; 
+		deepDVCOptions.mode = DeepDVCMode::eOn;
+		deepDVCOptions.intensity = ctx.deepDVC.intensity;
 		deepDVCOptions.saturationBoost = ctx.deepDVC.saturationBoost;
 		original_slDeepDVCSetOptions(viewport, deepDVCOptions);
 	}
 
 	if (ctx.streamline.forceLoadDLSSG) {
 		DLSSGOptions optionsg{};
-		// These are populated based on user selection in the UI
-		optionsg.mode = DLSSGMode::eOn; // e.g. sl::DLSSGMode::eOn;
-		auto result2 = original_slDLSSGSetOptions(viewport, optionsg);
-		//LOG_WARNING(L"==== " + std::to_wstring(result2));
+		optionsg.mode = DLSSGMode::eOn;
+		optionsg.numFramesToGenerate = 1; // Default 2X
+
+		// Apply MFG override if active at startup (nvapi uses UI-mnemonic encoding)
+		const int nvapiMode = ctx.nvapi.mfgEnforcedMode;
+		if (NvapiOverrideIsForceOff(nvapiMode))
+		{
+			// x1: force FG disabled at startup
+			optionsg.mode = DLSSGMode::eOff;
+			optionsg.numFramesToGenerate = 1;
+		}
+		else if (NvapiOverrideIsForceOn(nvapiMode))
+		{
+			// x2..x6: force FG on with specific multiplier
+			optionsg.mode = DLSSGMode::eOn;
+			optionsg.numFramesToGenerate = NvapiOverrideToNumFrames(nvapiMode);
+		}
+		else if (ctx.streamline.mfgEnforcedMode > 0)
+		{
+			// DFG dynamic (raw numFramesToGenerate encoding)
+			optionsg.numFramesToGenerate = ctx.streamline.mfgEnforcedMode;
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(g_DlssgSetOptionsMutex);
+			g_IsInternalCall = true;
+			auto result2 = SubmitDLSSGOptionsLocked(viewport, optionsg);
+			g_IsInternalCall = false;
+			// Cache as initial options so ForceApply preserves them
+			g_LastGameDLSSGOptions = optionsg;
+			g_HasGameDLSSGOptions = true;
+		}
 	}
 	return result;
+}
+
+void* GetCurrentViewPort() { return currentViewPort; }
+
+// Exported helper: force Streamline to apply current MFG override state.
+// Called from:
+//   - Sidebar dropdown handler when user changes override
+//   - FpsMonitor::UpdateDynamicMfg when DFG dynamic mode changes at runtime
+//
+// Respects the new semantics:
+//   nvapi x1       -> mode=eOff (force FG disabled)
+//   nvapi x2..x6   -> mode honored from cached game state; if game had eOn, apply our multiplier;
+//                     if game had eOff, keep eOff (don't force-enable over game's decision)
+//   nvapi OFF + DFG -> mode honored from cache; numFramesToGenerate=dfgMode when game had eOn
+void StreamlineProxy_ForceApplyMfgMode()
+{
+	if (!original_slDLSSGSetOptions || !currentViewPort || !g_HasGameDLSSGOptions)
+		return;
+
+	const int nvapiMode = ctx.nvapi.mfgEnforcedMode;
+	const int dfgMode = ctx.streamline.mfgEnforcedMode;
+
+	// Nothing active and nothing to restore - bail
+	if (nvapiMode == 0 && dfgMode <= 0)
+		return;
+
+	std::lock_guard<std::mutex> lock(g_DlssgSetOptionsMutex);
+
+	// Start from game's last cached options to preserve flags, formats, buffer sizes, etc.
+	DLSSGOptions optionsg = g_LastGameDLSSGOptions;
+
+	if (NvapiOverrideIsForceOff(nvapiMode))
+	{
+		// x1: force disable regardless of game's last state
+		optionsg.mode = DLSSGMode::eOff;
+		optionsg.numFramesToGenerate = 1;
+	}
+	else if (NvapiOverrideIsForceOn(nvapiMode))
+	{
+		// x2..x6: honor game's mode - only apply multiplier when game had FG enabled.
+		// If game had FG off, leave mode=eOff untouched; wrapper will apply override when
+		// game next enables FG.
+		if (optionsg.mode != DLSSGMode::eOff)
+			optionsg.numFramesToGenerate = NvapiOverrideToNumFrames(nvapiMode);
+	}
+	else if (dfgMode > 0)
+	{
+		// DFG dynamic (raw frame count encoding)
+		if (optionsg.mode != DLSSGMode::eOff)
+			optionsg.numFramesToGenerate = dfgMode;
+	}
+
+	LOG_DEBUG(L"[STREAMLINE] ForceApplyMfgMode: mode=" + std::to_wstring((uint32_t)optionsg.mode)
+		+ L" numFramesToGenerate=" + std::to_wstring(optionsg.numFramesToGenerate)
+		+ L" (nvapi=" + std::to_wstring(nvapiMode)
+		+ L" dfg=" + std::to_wstring(dfgMode) + L")"
+		+ L" flags=" + std::to_wstring((uint32_t)optionsg.flags)
+		+ L" cachedFromGame=" + std::to_wstring(g_HasGameDLSSGOptions));
+
+	g_IsInternalCall = true;
+	int result = SubmitDLSSGOptionsLocked(currentViewPort, optionsg);
+	g_IsInternalCall = false;
+
+	LOG_DEBUG(L"[STREAMLINE] ForceApplyMfgMode: returned " + std::to_wstring(result));
+}
+
+// Exported helper: restore the full cached game DLSSG options to Streamline
+// Called when DFG is disabled OR when sidebar override cycles back to OFF -
+// gives back full control to the game's settings.
+// Skips restore if any nvapi override is active (including x1), since wrapper
+// will enforce override on next game call anyway.
+void StreamlineProxy_RestoreGameDLSSGOptions()
+{
+	if (!original_slDLSSGSetOptions || !currentViewPort || !g_HasGameDLSSGOptions)
+		return;
+
+	// Any nvapi override active (x1..x6) means we shouldn't restore - wrapper handles it
+	if (ctx.nvapi.mfgEnforcedMode != 0)
+	{
+		LOG_DEBUG(L"[STREAMLINE] RestoreGameDLSSGOptions: skipped, nvapi override active (mode="
+			+ std::to_wstring(ctx.nvapi.mfgEnforcedMode) + L")");
+		return;
+	}
+
+	std::lock_guard<std::mutex> lock(g_DlssgSetOptionsMutex);
+
+	LOG_DEBUG(L"[STREAMLINE] RestoreGameDLSSGOptions: mode=" + std::to_wstring((uint32_t)g_LastGameDLSSGOptions.mode)
+		+ L" numFramesToGenerate=" + std::to_wstring(g_LastGameDLSSGOptions.numFramesToGenerate)
+		+ L" flags=" + std::to_wstring((uint32_t)g_LastGameDLSSGOptions.flags));
+
+	g_IsInternalCall = true;
+	int result = SubmitDLSSGOptionsLocked(currentViewPort, g_LastGameDLSSGOptions);
+	g_IsInternalCall = false;
+
+	LOG_DEBUG(L"[STREAMLINE] RestoreGameDLSSGOptions: returned " + std::to_wstring(result));
 }
 
 int detoured_slSetFeatureLoaded(Feature feature, bool loaded)
 {
 	//LOG_WARNING(std::wstring(L"========= ") + std::to_wstring(feature) + L" : " + std::to_wstring(loaded)  + __FUNCTIONW__);
-	
+
 	if (feature == kFeatureDLSS_G) {
 		loaded = true;
 	}
@@ -610,12 +1084,65 @@ int detoured_slGetFeatureFunction(Feature feature, const char* functionName, voi
 	int result = original_slGetFeatureFunction(feature, functionName, function);
 
 	if (funcName == "slDLSSSetOptions" && result == 0) {
-		original_slDLSSSetOptions = (SL2ARGS) function;
+		original_slDLSSSetOptions = (SL2ARGS)function;
 		function = slDLSSSetOptions;
+	}
+
+	if (funcName == "slDLSSGSetOptions" && result == 0) {
+		original_slDLSSGSetOptions = reinterpret_cast<DLSSGSETOPTS>(function);
+		function = reinterpret_cast<void*>(slDLSSGSetOptionsWrapper);
 	}
 
 
 	return result;
+}
+
+// =============================================================================
+// Lazy attach for SL Present hooks
+// Called from DetourStreamline() and also from proxy_CreateSwapChain* if
+// isPresentHookEnabled became true after DetourStreamline() already ran.
+// =============================================================================
+static bool s_SlPresentHookAttempted = false;
+
+void TryAttachSlPresentHooks()
+{
+	if (s_SlPresentHookAttempted)
+		return;
+
+	if (!ctx.streamline.isPresentHookEnabled)
+		return;
+
+	if (!GetModuleHandle(TEXT("sl.interposer.dll")))
+		return;
+
+	s_SlPresentHookAttempted = true;
+
+	bool hooked = false;
+
+	original_slHookPresent = (SL4ARGS)GetProcAddress(GetModuleHandle(TEXT("sl.interposer.dll")), "slHookPresent");
+	if (original_slHookPresent) {
+		DetourTransactionBegin();
+		DetourUpdateThread(GetCurrentThread());
+		DetourAttach(&(PVOID&)original_slHookPresent, detoured_slHookPresent);
+		DetourTransactionCommit();
+		LOG_INFO(L"[STREAMLINE] slHookPresent detour attached for UI overlay");
+		hooked = true;
+	}
+
+	original_slHookPresent1 = (SL5ARGS)GetProcAddress(GetModuleHandle(TEXT("sl.interposer.dll")), "slHookPresent1");
+	if (original_slHookPresent1) {
+		DetourTransactionBegin();
+		DetourUpdateThread(GetCurrentThread());
+		DetourAttach(&(PVOID&)original_slHookPresent1, detoured_slHookPresent1);
+		DetourTransactionCommit();
+		LOG_INFO(L"[STREAMLINE] slHookPresent1 detour attached for UI overlay");
+		hooked = true;
+	}
+
+	if (!hooked) {
+		ctx.streamline.isPresentHookEnabled = false;
+		LOG_WARNING(L"[STREAMLINE] slHookPresent not found in sl.interposer.dll - falling back to swapchain wrapper for UI overlay");
+	}
 }
 
 void DetourStreamline()
@@ -665,21 +1192,21 @@ void DetourStreamline()
 	//original_slGetFeatureRequirements = (SLGETFEATREQ)GetProcAddress(GetModuleHandle(TEXT("sl.interposer.dll")), "slGetFeatureRequirements");
 	//DetourAttach(&(PVOID&)original_slGetFeatureRequirements, detoured_slGetFeatureRequirements);
 	//DetourTransactionCommit();	
-	
-	/*
-	DetourTransactionBegin();
-	DetourUpdateThread(GetCurrentThread());
-	original_slHookPresent = (SL4ARGS)GetProcAddress(GetModuleHandle(TEXT("sl.interposer.dll")), "slHookPresent");
-	DetourAttach(&(PVOID&)original_slHookPresent, detoured_slHookPresent);
-	DetourTransactionCommit();
 
-	DetourTransactionBegin();
-	DetourUpdateThread(GetCurrentThread());
-	original_slHookPresent1 = (SL5ARGS)GetProcAddress(GetModuleHandle(TEXT("sl.interposer.dll")), "slHookPresent1");
-	DetourAttach(&(PVOID&)original_slHookPresent1, detoured_slHookPresent1);
-	DetourTransactionCommit();
-	*/
-	#ifdef STREAMLINE_DETOUR
+	// =========================================================================
+	// Hook slHookPresent/Present1 for UI overlay on Streamline-managed swapchains
+	// When SL >=2.10 destroys and recreates swapchains internally, the wrapper
+	// path never receives Present calls. This hooks the interposer's Present
+	// entry point directly, which is always in the call chain.
+	//
+	// If the export doesn't exist (SL <2.10), we disable the flag so the
+	// wrapper path handles overlay rendering as before.
+	//
+	// NOTE: This may also be called lazily from TryAttachSlPresentHooks()
+	// if isPresentHookEnabled was not yet set when DetourStreamline() ran.
+	// =========================================================================
+	TryAttachSlPresentHooks();
+#ifdef STREAMLINE_DETOUR
 	if (processName == L"witcher3!.exe" && GetModuleHandle(TEXT("sl.interposer.dll"))) {
 		Console::Warning(L"[STREAMLINE] slInit: Witcher 3 detected, enabling aspect ratio anti-glitch hook");
 		DetourTransactionBegin();

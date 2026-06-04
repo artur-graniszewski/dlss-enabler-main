@@ -205,6 +205,8 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -352,7 +354,7 @@
       </CreateHotpatchableImage>
       <MinimalRebuild>
       </MinimalRebuild>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <ShowIncludes>false</ShowIncludes>
     </ClCompile>
     <Link>
@@ -588,6 +590,7 @@
     <ClCompile Include="Exports\Exports.cpp" />
     <ClCompile Include="Includes\nvapi\NvApiDriverSettings.c" />
     <ClCompile Include="Includes\NvParamImp.cpp" />
+    <ClCompile Include="Utils\ActionIntensity.cpp" />
     <ClCompile Include="Utils\Autoconfig.cpp" />
     <ClCompile Include="Utils\BackendManager.cpp" />
     <ClCompile Include="Utils\Common.cpp" />
@@ -595,7 +598,9 @@
     <ClCompile Include="Utils\Console.cpp" />
     <ClCompile Include="Utils\DetourApiDetours.cpp" />
     <ClCompile Include="Utils\DlssgHook.cpp" />
+    <ClCompile Include="Utils\DlssgLazyHook.cpp" />
     <ClCompile Include="Utils\DlssgProxy.cpp" />
+    <ClCompile Include="Utils\DlssgRouter.cpp" />
     <ClCompile Include="Utils\DxgiHook.cpp" />
     <ClCompile Include="Utils\DxgiProxy.cpp" />
     <ClCompile Include="Utils\FakeNVAPIHook.cpp" />
@@ -607,6 +612,7 @@
     <ClCompile Include="Utils\Logger.cpp" />
     <ClCompile Include="utils\Kernel32Proxy.cpp" />
     <ClCompile Include="Utils\MenuAnimations.cpp" />
+    <ClCompile Include="Utils\NgxFileSigner.cpp" />
     <ClCompile Include="Utils\NvngxCommon.cpp" />
     <ClCompile Include="Utils\NgxFeatureEvents.cpp" />
     <ClCompile Include="Utils\NgxFrontend.cpp" />
@@ -669,16 +675,21 @@
     <ClInclude Include="Includes\nvapi.h" />
     <ClInclude Include="Includes\nvapi\NvApiDriverSettings.h" />
     <ClInclude Include="Includes\NvParamImp.h" />
+    <ClInclude Include="NvapiTest.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="Utils\ActionIntensity.h" />
     <ClInclude Include="Utils\Autoconfig.h" />
     <ClInclude Include="Utils\BackendManager.h" />
     <ClInclude Include="Utils\Console.h" />
+    <ClInclude Include="Utils\D3D12ComputeStateTracker.h" />
     <ClInclude Include="Utils\DetourApi.h" />
     <ClInclude Include="Utils\DetourApiDetours.h" />
     <ClInclude Include="Utils\DetourTxn.h" />
     <ClInclude Include="Utils\DlssgHook.h" />
+    <ClInclude Include="Utils\DlssgLazyHook.h" />
     <ClInclude Include="Utils\DlssgProxy.h" />
+    <ClInclude Include="Utils\DlssgRouter.h" />
     <ClInclude Include="Utils\DxgiHook.h" />
     <ClInclude Include="Utils\DxgiProxy.h" />
     <ClInclude Include="Utils\ExportRegistry.h" />
@@ -698,6 +709,7 @@
     <ClInclude Include="Utils\Kernel32Hook.h" />
     <ClInclude Include="Utils\Logger.h" />
     <ClInclude Include="Utils\MenuAnimations.h" />
+    <ClInclude Include="Utils\NgxFileSigner.h" />
     <ClInclude Include="Utils\NvngxCommon.h" />
     <ClInclude Include="Utils\NgxFeatureEvents.h" />
     <ClInclude Include="Utils\NgxFrontend.h" />
@@ -725,6 +737,7 @@
     <ClInclude Include="Utils\ReflexEvents.h" />
     <ClInclude Include="Utils\RegistryHook.h" />
     <ClInclude Include="Utils\RegistryProxy.h" />
+    <ClInclude Include="Utils\RoutePolicy.h" />
     <ClInclude Include="Utils\ScopedGpuSpoofing.h" />
     <ClInclude Include="Utils\SettingsMenu.h" />
     <ClInclude Include="Utils\SettingsPersistence.h" />

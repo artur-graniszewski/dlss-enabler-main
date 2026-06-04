@@ -2,6 +2,7 @@
 #include "Hook.h"
 #include "Common.h"
 #include "FpsMonitor.h"
+#include "ActionIntensity.h"
 #include "OverdriveController.h"
 
 namespace FpsMonitor
@@ -25,6 +26,7 @@ namespace FpsMonitor
             isInstalled = true;
             LOG_INFO(L"[DXGI] Installing FPS Monitor");
             FpsMonitor::Init();
+            ActionIntensity::Initialize();
             OverdriveController::Init(); // @todo: refactor me!
 
             return true;

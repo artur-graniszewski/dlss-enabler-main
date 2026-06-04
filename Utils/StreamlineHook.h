@@ -93,8 +93,58 @@ struct HookStreamline : IHook {
 			ctx.streamline.deepDvcVersion = InstallPlugin(L"sl.deepdvc.dll", api);
 		}
 
-		auto filePath = Common::GetProcessFilePath();
-		std::wstring processName = filePath.filename().wstring();
+		static bool alertShown = false;
+		// Check interposer version: warn if >= 2.0 but < 2.7
+		if (ctx.isFirstRun && !alertShown) {
+			alertShown = true;
+			const std::wstring& ver = ctx.streamline.interposerVersion;
+			int slMajor = 0, slMinor = 0;
+			if (ver != L"0.0.0.0") {
+				auto dot1 = ver.find(L'.');
+				if (dot1 != std::wstring::npos) {
+					try {
+						slMajor = std::stoi(ver.substr(0, dot1));
+						auto dot2 = ver.find(L'.', dot1 + 1);
+						slMinor = (dot2 != std::wstring::npos)
+							? std::stoi(ver.substr(dot1 + 1, dot2 - dot1 - 1))
+							: std::stoi(ver.substr(dot1 + 1));
+					}
+					catch (...) {}
+				}
+			}
+			if (slMajor == 2 && slMinor < 7) {
+				std::wstring msg =
+					L"Outdated NVIDIA Streamline detected.\n\n"
+					L"Installed version: " + ver + L"\n\n"
+					L"DLSS Enabler requires Streamline 2.7.32 or newer\n"
+					L"for full support of MFG and DFG.\n\n"
+					L"Download the latest version::\n"
+					L"https://github.com/NVIDIAGameWorks/Streamline";
+				MessageBoxW(
+					nullptr,
+					msg.c_str(),
+					L"DLSS Enabler - Outdated Streamline Detected",
+					MB_OK | MB_ICONWARNING
+				);
+			}
+
+			if (slMajor == 1) {
+				std::wstring msg =
+					L"Old NVIDIA Streamline detected.\n\n"
+					L"Installed version: " + ver + L"\n\n"
+					L"DLSS Enabler will run in limited mode.\n"
+					L"Only Frame Generation 2x is available.\n";
+				MessageBoxW(
+					nullptr,
+					msg.c_str(),
+					L"DLSS Enabler - Old Streamline Detected",
+					MB_OK | MB_ICONWARNING
+				);
+			}
+		}
+
+
+		std::wstring processName = Common::GetProcessFileName();
 		auto sli = api.GetModHandleW(L"sl.interposer.dll");
 
 		if (sli == nullptr) {

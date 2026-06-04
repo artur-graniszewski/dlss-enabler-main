@@ -4,8 +4,12 @@
 #include "DetourTxn.h"
 #include "DlssgProxy.h"
 #include "NgxHookHelpers.h"
+#include "NgxProvider.h"
+#include "DlssgLazyHook.h"
 
 extern std::unique_ptr<DLSSG::DlssgProxy> dlssgModule;
+extern std::unique_ptr<NGX::NgxProvider> ngxProvider;
+extern std::unique_ptr<BackendManager> ngxBackends;
 
 namespace DLSSG
 {
@@ -180,10 +184,13 @@ namespace DLSSG
 
         bool CanInstall(Context& ctx, IDetourApi& api) override {
             return
-                api.GetModHandleW(L"nvngx_dlssg.dll") != nullptr;
+                api.GetModHandleW(L"nvngx_dlssg.dll") != nullptr && ctx.nvapi.isRealHardwareDetected;
         }
 
         bool Install(Context& ctx, IDetourApi& api) override {
+            if (ctx.ngx.isDlssgSupportedByHardware && !ctx.ngx.isDlssgDisabled) {
+                return true;
+            }
             static auto lastDlssg = api.GetModHandleW(L"nvngx_dlssg.dll");
             auto dlssg = api.GetModHandleW(L"nvngx_dlssg.dll");
 
@@ -197,6 +204,9 @@ namespace DLSSG
             }
 
             LOG_INFO(L"[NVNGX] DLSSG initializing");
+
+            InitializeDlssgHooks();
+
             isHooked = true;
 
             DetourTxn txn(api);

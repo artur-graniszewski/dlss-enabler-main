@@ -646,3 +646,5 @@ int detoured_slEvaluateFeature(Feature feature, void* arg2, void* arg3, void* ar
 int detoured_slGetFeatureFunction(Feature feature, const char* functionName, void*& function);
 int detoured_slSetFeatureLoaded(Feature feature, bool loaded);
 int detoured_slSetTagForCyberpunkFixed(void* arg, const ResourceTag* resources, uint32_t numResources, void* arg4);
+// StreamlineProxy.h
+void* GetCurrentViewPort();

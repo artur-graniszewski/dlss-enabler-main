@@ -653,4 +653,88 @@ float HorizonToVisibility(float h1, float h2, float n)
     return 0.25 * (vis1 + vis2);
 }
 
+// ============================================================
+// ATMOSPHERIC ATTENUATION MASK
+// ============================================================
+// Detects volumetric attenuation (fog, smoke, DOF, underwater)
+// by comparing geometric edges (depth) vs visible edges (color luma).
+// Returns: 1.0 = clear (apply AO/GI fully), 0.0 = veiled (skip AO/GI).
+//
+// Idea: if depth has a strong edge but luma doesn't, something
+// is veiling the scene at this pixel.
+//
+// COST: 16 texture loads (8 depth + 8 color). Caller MUST gate this
+// so it only runs on pixels that would actually be darkened by AO/GI.
+// ============================================================
+float ComputeAtmosphericMask(uint2 p, float linearDepth)
+{
+    // 3x3 Sobel on samples spaced STEP px apart -> effectively 5x5 footprint
+    // without the cost of a true 5x5 kernel.
+    const int STEP = 2;
+
+    int2 pi = int2(p);
+    uint2 dim = uint2(g.Width, g.Height);
+    int2 maxC = int2(dim) - int2(1, 1);
+
+    // ---- Depth samples (8 neighbours, linearized) ----
+    float dN  = LinearizeDepth(gDepth.Load(int3(clamp(pi + int2( 0,    -STEP), int2(0,0), maxC), 0)));
+    float dS  = LinearizeDepth(gDepth.Load(int3(clamp(pi + int2( 0,     STEP), int2(0,0), maxC), 0)));
+    float dE  = LinearizeDepth(gDepth.Load(int3(clamp(pi + int2( STEP,  0   ), int2(0,0), maxC), 0)));
+    float dW  = LinearizeDepth(gDepth.Load(int3(clamp(pi + int2(-STEP,  0   ), int2(0,0), maxC), 0)));
+    float dNE = LinearizeDepth(gDepth.Load(int3(clamp(pi + int2( STEP, -STEP), int2(0,0), maxC), 0)));
+    float dNW = LinearizeDepth(gDepth.Load(int3(clamp(pi + int2(-STEP, -STEP), int2(0,0), maxC), 0)));
+    float dSE = LinearizeDepth(gDepth.Load(int3(clamp(pi + int2( STEP,  STEP), int2(0,0), maxC), 0)));
+    float dSW = LinearizeDepth(gDepth.Load(int3(clamp(pi + int2(-STEP,  STEP), int2(0,0), maxC), 0)));
+
+    // Sobel on depth, normalized by linearDepth so far/near are treated equally
+    float invD = 1.0 / max(linearDepth, 0.01);
+    float gxD = ((dNE + 2.0 * dE + dSE) - (dNW + 2.0 * dW + dSW)) * invD;
+    float gyD = ((dSW + 2.0 * dS + dSE) - (dNW + 2.0 * dN + dNE)) * invD;
+    float depthEdge = sqrt(gxD * gxD + gyD * gyD);
+
+    // ---- Color luma samples (8 neighbours) ----
+    #define LUMA_AT(ofs) dot(gColor.Load(int3(clamp(pi + (ofs), int2(0,0), maxC), 0)).rgb, float3(0.299, 0.587, 0.114))
+    float lN  = LUMA_AT(int2( 0,    -STEP));
+    float lS  = LUMA_AT(int2( 0,     STEP));
+    float lE  = LUMA_AT(int2( STEP,  0   ));
+    float lW  = LUMA_AT(int2(-STEP,  0   ));
+    float lNE = LUMA_AT(int2( STEP, -STEP));
+    float lNW = LUMA_AT(int2(-STEP, -STEP));
+    float lSE = LUMA_AT(int2( STEP,  STEP));
+    float lSW = LUMA_AT(int2(-STEP,  STEP));
+    #undef LUMA_AT
+
+    float gxL = (lNE + 2.0 * lE + lSE) - (lNW + 2.0 * lW + lSW);
+    float gyL = (lSW + 2.0 * lS + lSE) - (lNW + 2.0 * lN + lNE);
+    float lumaEdge = sqrt(gxL * gxL + gyL * gyL);
+
+    // ---- Confidence: only meaningful where geometry has an edge ----
+    // If depth is locally flat we have no signal -> assume clear.
+    const float kDepthEdgeMin = 0.015; // tune: relative depth slope below this = no signal
+    const float kDepthEdgeBand = 0.05;
+    float geoConfidence = saturate((depthEdge - kDepthEdgeMin) / kDepthEdgeBand);
+
+    // ---- Visibility ratio ----
+    // Adaptive expected luma response: dark scenes legitimately have
+    // weaker luma edges, so we lower the bar there.
+    float avgLuma = (lN + lS + lE + lW + lNE + lNW + lSE + lSW) * 0.125;
+    float expectedScale = 4.0 + 12.0 * saturate(avgLuma);
+    float expectedLuma = depthEdge * expectedScale;
+
+    float visibility = saturate(lumaEdge / max(expectedLuma, 0.01));
+
+    // Where we have no geometric signal, fall back to "clear" (no attenuation).
+    visibility = lerp(1.0, visibility, geoConfidence);
+
+    // ---- Distance bias ----
+    // Foreground low-contrast (DOF foreground blur) shouldn't kill near AO.
+    // Ramp the mask in over a few meters so close geometry is always trusted.
+    const float kDistRampStart = 5.0;
+    const float kDistRampEnd   = 20.0;
+    float distWeight = saturate((linearDepth - kDistRampStart) / (kDistRampEnd - kDistRampStart));
+    visibility = lerp(1.0, visibility, distWeight);
+
+    return visibility;
+}
+
 #endif // SSRTGI_COMMON_HLSL

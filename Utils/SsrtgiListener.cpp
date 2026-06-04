@@ -6,10 +6,16 @@
 // This decouples SSRTGI from NgxFrontend - NgxFrontend dispatches events,
 // and this listener handles them for SuperSampling features.
 //
+// PIPELINE FIX: Uses D3D12ComputeStateTracker to save/restore the game's
+// compute pipeline state around SSRTGI execution. This prevents crashes in
+// games (e.g. RE Engine) that assume the D3D12 pipeline is untouched after
+// DLSS, since DLSS normally uses CUDA and doesn't modify the command list.
+//
 // =============================================================================
 
 #include "NgxFeatureEvents.h"
 #include "SsrtgiPostProcessD3D12.h"
+#include "D3D12ComputeStateTracker.h"  // PIPELINE FIX
 #include "PostFxRegistry.h"
 #include "Common.h"
 #include "../Core/Context.h"
@@ -247,8 +253,21 @@ static void OnPostCreateD3D12(
     NVSDK_NGX_Result result)
 {
     // Only handle SuperSampling (filter is already applied, but double-check)
-    if (featureId != NVSDK_NGX_Feature_SuperSampling)
+    if (!(featureId == NVSDK_NGX_Feature_SuperSampling || featureId == NVSDK_NGX_Feature_RayReconstruction))
         return;
+
+    // =========================================================================
+    // PIPELINE FIX: Install Detours hooks on first command list we see
+    // =========================================================================
+    static bool hooksInstalled = false;
+    if (!hooksInstalled && cmdList)
+    {
+        hooksInstalled = D3D12ComputeStateTracker::InstallHooks(cmdList);
+        if (hooksInstalled)
+            LOG_INFO(L"[SSRTGI] Compute state tracker hooks installed");
+        else
+            LOG_WARNING(L"[SSRTGI] Failed to install compute state tracker hooks");
+    }
 
     ID3D12Device* dev = nullptr;
     cmdList->GetDevice(IID_PPV_ARGS(&dev));
@@ -408,7 +427,7 @@ static void OnPreEvaluateD3D12(
     NVSDK_NGX_Feature featureId)
 {
     // Only handle SuperSampling
-    if (featureId != NVSDK_NGX_Feature_SuperSampling)
+    if (!(featureId == NVSDK_NGX_Feature_SuperSampling || featureId == NVSDK_NGX_Feature_RayReconstruction))
         return;
 
     // Check if SSRTGI is enabled in UI
@@ -502,6 +521,11 @@ static void OnPreEvaluateD3D12(
     p.MVScaleX = mvScaleX;
     p.MVScaleY = mvScaleY;
 
+    // =========================================================================
+    // PIPELINE FIX: Capture game's compute state BEFORE our passes
+    // =========================================================================
+    auto gameState = D3D12ComputeStateTracker::Capture(cmdList);
+
     try {
         ssrtgiCtx->Execute(cmdList, color, depth, mv, false);
     }
@@ -509,6 +533,11 @@ static void OnPreEvaluateD3D12(
         std::string errStr(e.what());
         LOG_ERROR(L"EXCEPTION in SSRTGI Execute: " + std::wstring(errStr.begin(), errStr.end()));
     }
+
+    // =========================================================================
+    // PIPELINE FIX: Restore game's compute state AFTER our passes
+    // =========================================================================
+    D3D12ComputeStateTracker::Restore(cmdList, gameState);
 }
 
 static void OnPreReleaseD3D12(
@@ -516,7 +545,7 @@ static void OnPreReleaseD3D12(
     NVSDK_NGX_Feature featureId)
 {
     // Only handle SuperSampling
-    if (featureId != NVSDK_NGX_Feature_SuperSampling)
+    if (!(featureId == NVSDK_NGX_Feature_SuperSampling || featureId == NVSDK_NGX_Feature_RayReconstruction))
         return;
 
     if (!handle) {
@@ -571,6 +600,9 @@ namespace SsrtgiListener
 
     void Unregister()
     {
+        // PIPELINE FIX: Remove Detours hooks on unregister
+        D3D12ComputeStateTracker::RemoveHooks();
+
         // Note: Currently NgxFeatureEvents doesn't support unregistering individual listeners
         // This would clear ALL listeners, so use with caution
         // NgxFeatureEvents::ClearAllListeners();

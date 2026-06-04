@@ -48,6 +48,9 @@ struct NvApi
     bool isInitialized = false;
     bool isEmbeddedNvapiUsed = false;
     bool isXellEnabled = false;
+    bool isRealHardwareDetected = false;
+    bool isHighestArchEnabled = false;
+    int mfgEnforcedMode = 0;
 };
 
 struct Ngx
@@ -56,11 +59,16 @@ struct Ngx
     wstring configuredFrameGenerationMethod = FRAMEGENERATION_METHOD_AUTO;
     wstring configuredUpscalingMethod = UPSCALING_METHOD_AUTO;
     wstring configuredVkUpscalingMethod = UPSCALING_METHOD_AUTO;
+    bool isUiPinningEnabled = false;
+    bool isUiTextureEnabled = false;
     bool isRealNgxHidden = false;
     bool isProxyEnabled = true;
     bool isEmbeddedDlssgUsed = true;
     bool isEmbeddedNgxUsed = true;
+    bool isGhostBustingEnabled = false;
+    bool isAutoExposureEnabled = false;
     bool isRealNgxPresent = false;
+    bool isEarlyInitEnabled = false;
     bool isFrameGenerationEnabled = true;
     bool isUpscalingActive = false;
     bool isDynamicFrameGenerationEnabled = false;
@@ -70,9 +78,12 @@ struct Ngx
     bool isDlssgEnabled = false;
     bool isDeepDvcEnabled = true;
     bool isDlssgSupportedByHardware = false;
+    bool isDlssgMultiframeSupported = true;
+    bool isDlssgDisabled = false;
     bool isDlssSupportedByHardware = false;
     bool isDuplicatingFrames = false;
     bool isGeneratingFrames = false;
+    bool isDlssgProfilerEnabled = false;
     unsigned int framesGenerated = 0;
     unsigned int maxFramesGenerated = 1;
     unsigned int upscalingQuality = 0;
@@ -90,6 +101,12 @@ struct Ngx
     double lastEvaluationTimeMsec = 0.0f;
     bool isFrameGenerationActive = false;
     bool isNextFrameSkippable = false;
+    bool isHudInterpolationEnabled = false;
+    bool isHudlessMaskEnabled = false;
+    bool isHybridMfgEnabled = false;
+    bool isHybridMfgForced = false;
+    uint64_t dlaaId = NVSDK_NGX_PerfQuality_Value_DLAA; // can be overriden... if game is broken, eg Pragmata sets 3 and expects 5....
+    int hudDetectionMode = 0;
 };
 
 struct Streamline
@@ -102,10 +119,23 @@ struct Streamline
     wstring commonVersion = L"0.0.0.0";
     wstring reflexVersion = L"0.0.0.0";
     wstring interposerPath = L"";
+    float actionIntensityBoost = 1.25f;
     bool forceLoadDeepDvc = false;
     bool forceLoadDLSSG = false;
-    bool spoofNextCreateFactoryCall = false;
+    bool isSelectiveSpoofingEnabled = false;
+    bool isPresentHookEnabled = false;
     bool isPresent = false;
+    int mfgEnforcedMode = 0;
+    bool isDynamicMfgEnabled = false;
+    int dynamicMfgThreshold2 = 90;
+    int dynamicMfgThreshold3 = 60;
+    int dynamicMfgThreshold4 = 30;
+    int dynamicMfgThreshold5 = 15;
+    int dynamicMfgThreshold6 = 5;
+    int dfgMode = 0;          // 0 = AUTO, 1 = CUSTOM
+    int dfgTargetFps = 120;   // Target FPS
+    float minDynamicFps = 30;
+    bool isMinDynamicFpsActive = false;
 };
 
 struct Logging
@@ -115,10 +145,10 @@ struct Logging
     bool isDebugEnabled = false;
     bool isConsoleEnabled = false;
     bool isReflexDebugEnabled = false;
-	bool isNvapiDebugEnabled = true;
-	bool isNvngxDebugEnabled = true;
-	bool isStreamlineDebugEnabled = true;
-	bool isDxgiDebugEnabled = true;
+    bool isNvapiDebugEnabled = true;
+    bool isNvngxDebugEnabled = true;
+    bool isStreamlineDebugEnabled = true;
+    bool isDxgiDebugEnabled = true;
 };
 
 struct Emulation
@@ -138,6 +168,7 @@ struct DirectX
     bool isBilinearForced = false;
     int maxAnisotropy = 0;
     int skipTopMips = 0;
+    bool isSpoofingEnabled = true;
 };
 
 struct Reflex
@@ -184,18 +215,19 @@ struct DeepDVC
 };
 
 // Define the global structure
-struct Context 
+struct Context
 {
     // data about the game
     NVSDK_NGX_EngineType engineType = NVSDK_NGX_ENGINE_TYPE_CUSTOM;
     string engineVersion = "1.0.0";
-    unsigned long driverVersion = 56633;
+    unsigned long driverVersion = 99933;
     string projectId = "DLSS Enabler";
     Hardware gpu;
     NvApi nvapi;
     Ngx ngx;
     Emulation emulation;
     Streamline streamline;
+    bool isFirstRun = false;
     DeepDVC deepDVC;
     DirectX directX;
     unsigned long long applicationId = 0;
@@ -215,13 +247,15 @@ struct Context
     bool isOptiscalerInitialized = false;
 
     int fsr3fgVersion = 1; // 1 = 3.1, 0 = 3.0
-    int overdriveMode = -1;
+    int overdriveMode = 0;
+    bool isOptiPatcherActive = false;
 
     bool enableNgxNativeResolution = false;
     bool enableDirectSwapchainHooking = false;
     bool enableReflexInjection = false;
     bool enableUnloadProtection = true;
 
+    bool isUiEnabled = true;
     bool isProjectIdReported = false;
     bool isLoadedByDxgi = false;
     bool isValidationOn = true;
@@ -229,7 +263,9 @@ struct Context
     bool isOptiscalerSwapchainHookEnabled = true;
     uint32_t flags;
     bool quickBoot = false;
-
+    int ghostBusterDebugMode = 0;
+    bool frameGenerationMode = 0; // 0 => FSR3, 1 => DLSSG
+    bool areHotKeysEnabled = false;
     Logging logging;
     Reflex reflex;
 };

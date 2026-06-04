@@ -34,6 +34,7 @@ class Common
         static void KillProcess();
         static void SetProcAddress(GetProcAddress_t proc);
         static FARPROC GetProcAddress(HMODULE hModule, LPCSTR lpProcName);
+        static std::wstring GetProcessFileName();
     private:
         static void DisplayErrorMessage(const std::wstring& reason, const bool shouldKill);
         static void CheckModConflict();

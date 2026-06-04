@@ -21,3 +21,13 @@ HRESULT WINAPI proxy_CreateSwapChainForCoreWindow(IDXGIFactory* pFactory, IUnkno
 	IDXGIOutput* pRestrictToOutput, IDXGISwapChain1** ppSwapChain);
 HRESULT WINAPI proxy_CreateSwapChainForComposition(IDXGIFactory* pFactory, IUnknown* pDevice, const DXGI_SWAP_CHAIN_DESC1* pDesc,
 	IDXGIOutput* pRestrictToOutput, IDXGISwapChain1** ppSwapChain);
+
+// Enable / disable the swapchain hook subsystem. Called by HookDxgi::Install / Uninstall.
+// Controls whether DetourSwapChain1 / DetourPresent / DetourInitThread may install hooks.
+void EnableSwapchainHooks();
+void DisableSwapchainHooks();
+
+// Symmetric counterpart to the detours installed by DetourSwapChain1 and DetourPresent.
+// Detaches Present / Present1 and the four CreateSwapChain* vtable entries in one transaction.
+// Must be called after DisableSwapchainHooks() so that no concurrent (re-)attach can race the detach.
+void TeardownSwapchainProxy();

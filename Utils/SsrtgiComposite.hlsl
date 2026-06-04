@@ -12,7 +12,7 @@
 // ============================================================
 
 // Set to 1 to enable debug modes, 0 for production (faster)
-#define ENABLE_DEBUG_MODES 0
+#define ENABLE_DEBUG_MODES 0 
 
 // Set to 1 to read from gOut1 (Denoise output) instead of gHistory (Temporal output)
 // Use this when testing without Temporal pass
@@ -28,6 +28,7 @@
 // 18 = Energy comparison: RED = surface brighter, GREEN = GI brighter
 // 19 = GI vs Bounce comparison
 // 23 = [NEW] Distance attenuation visualization
+// 24 = [NEW] Atmospheric mask visualization (green=clear, red=veiled)
 // --- TEMPORAL DEBUG (20-29) ---
 // 20 = Motion vectors (red=X, green=Y, gray=no motion)
 // 21 = GI difference: current vs history (white=difference)
@@ -115,6 +116,23 @@ void main(uint3 dtid : SV_DispatchThreadID)
     {
         float attVis = distAttenuation;
         gHistOut[px] = float4(1.0 - attVis, attVis, 0.0, 1.0);
+        return;
+    }
+#elif DEBUG_MODE == 24
+    // [NEW] Atmospheric mask visualization
+    // Re-evaluates the mask here for debug viz (Gather already applied it
+    // to gi/ao, so we can't recover the raw mask from those outputs).
+    // Green = clear, Red = veiled. Black = pixel was not a candidate
+    // in Gather (gating mirrored here).
+    {
+        bool isCand = (ao < 0.88) && (linearDepth > 5.0);
+        if (!isCand)
+        {
+            gHistOut[px] = float4(0, 0, 0.2, 1);
+            return;
+        }
+        float mVis = ComputeAtmosphericMask(px, linearDepth);
+        gHistOut[px] = float4(1.0 - mVis, mVis, 0.0, 1.0);
         return;
     }
 #elif DEBUG_MODE == 18

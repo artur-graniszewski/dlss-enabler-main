@@ -16,4 +16,15 @@ namespace DXGI
 	HRESULT WINAPI CreateDXGIFactory(REFIID riid, _COM_Outptr_ void** ppFactory);
 	HRESULT WINAPI CreateDXGIFactory1(REFIID riid, _COM_Outptr_ void** ppFactory);
 	HRESULT WINAPI CreateDXGIFactory2(UINT Flags, REFIID riid, _COM_Outptr_ void** ppFactory);
+
+	// Subsystem lifecycle - called by HookDxgi::Install / Uninstall.
+   // EnableDxgiHooks() raises the master flag; until then all lazy-attach paths
+   // (AttachToFactory / AttachToAdapter / EnsureSwapChainDetours) are no-ops.
+   // DisableDxgiHooks() lowers it so TeardownDxgi() sees a quiescent state.
+	void EnableDxgiHooks();
+	void DisableDxgiHooks();
+
+	// Detaches adapter+factory vtable hooks (EnumAdapters* / GetDesc*).
+	// Must be called after DisableDxgiHooks().
+	void TeardownDxgi();
 }

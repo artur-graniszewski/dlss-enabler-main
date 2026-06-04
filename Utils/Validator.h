@@ -16,10 +16,12 @@ public:
 	static void ValidateHAGSSetting(int hags);
 	static void ValidateNvidiaSignatureSetting(int setting);
 	static void ValidateDLSStoFSR3FilesStatus(int status);
+	static bool IsFakeNvidiaDriverDetected();
 
 private:
 	static int CheckRegistryValue(LPCWSTR registryKey, LPCWSTR valueName, DWORD expectedData);
 	static int CheckRegistryValueAndFile(const LPCSTR keyPath, const LPCSTR valueName, const LPCSTR appendedFileName);
 	static int CheckNvapi64Presence();
+	static std::string GetNgxRegistryPath();
 
 };

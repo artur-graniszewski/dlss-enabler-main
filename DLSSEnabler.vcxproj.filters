@@ -169,6 +169,7 @@
     <ClCompile Include="Utils\UxImgui\imgui_widgets.cpp">
       <Filter>UI\ImGui\UxGui</Filter>
     </ClCompile>
+    <ClCompile Include="Utils\UxImgui\misc\freetype\imgui_freetype.cpp" />
     <ClCompile Include="Utils\SettingsPersistence.cpp">
       <Filter>UI</Filter>
     </ClCompile>
@@ -193,8 +194,17 @@
     <ClCompile Include="Utils\NvngxCommon.cpp">
       <Filter>Proxy\NGX\Common</Filter>
     </ClCompile>
-    <ClCompile Include="Utils\UxImgui\misc\freetype\imgui_freetype.cpp">
-      <Filter>UI\ImGui</Filter>
+    <ClCompile Include="Utils\NgxFileSigner.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\DlssgLazyHook.cpp">
+      <Filter>Proxy\NGX</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\ActionIntensity.cpp">
+      <Filter>FpsMonitor</Filter>
+    </ClCompile>
+    <ClCompile Include="Utils\DlssgRouter.cpp">
+      <Filter>Proxy\NGX</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -297,6 +307,9 @@
     </ClInclude>
     <ClInclude Include="Utils\Optiscaler.h">
       <Filter>External</Filter>
+    </ClInclude>
+    <ClInclude Include="NvapiTest.h">
+      <Filter>Proxy\NVAPI</Filter>
     </ClInclude>
     <ClInclude Include="Utils\Nvapi64.h">
       <Filter>Proxy\NVAPI</Filter>
@@ -455,6 +468,7 @@
     <ClInclude Include="Utils\UxImgui\imgui_internal.h">
       <Filter>UI\ImGui\UxGui</Filter>
     </ClInclude>
+    <ClInclude Include="Utils\UxImgui\misc\freetype\imgui_freetype.h" />
     <ClInclude Include="Utils\SettingsPersistence.h">
       <Filter>UI</Filter>
     </ClInclude>
@@ -500,8 +514,23 @@
     <ClInclude Include="Utils\NvngxCommon.h">
       <Filter>Proxy\NGX\Common</Filter>
     </ClInclude>
-    <ClInclude Include="Utils\UxImgui\misc\freetype\imgui_freetype.h">
-      <Filter>UI\ImGui</Filter>
+    <ClInclude Include="Utils\NgxFileSigner.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\D3D12ComputeStateTracker.h">
+      <Filter>RayTracing</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DlssgLazyHook.h">
+      <Filter>Proxy\NGX</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\ActionIntensity.h">
+      <Filter>FpsMonitor</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\DlssgRouter.h">
+      <Filter>Proxy\NGX</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\RoutePolicy.h">
+      <Filter>Proxy\NGX</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -653,6 +682,12 @@
     </Filter>
     <Filter Include="Overdrive">
       <UniqueIdentifier>{0d8d1eeb-c70f-456c-aaad-a03bdbde2d02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="D3D12">
+      <UniqueIdentifier>{080f0d48-6908-4c5a-b865-f2a6517d83d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="D3D12\Hook">
+      <UniqueIdentifier>{d34a79de-5208-4514-87d0-b64a2950a3b2}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

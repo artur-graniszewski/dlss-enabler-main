@@ -15,6 +15,9 @@
 #include "Nvapi64Dispatch.h"
 #include <stdio.h>
 #include <intrin.h>
+#include "Console.h"
+#include "Optiscaler.h"
+#include "../Utils/Validator.h"
 
 #pragma intrinsic(_ReturnAddress)
 
@@ -23,6 +26,8 @@ HookManager* hookManager;
 
 void DetachDetours()
 {
+	if (hookManager)
+		hookManager->UninstallAll();
 	return;
 }
 
@@ -38,13 +43,55 @@ void InitializeDetours()
 	static HookManager mgr(ctx, detourApi);
 	hookManager = &mgr;
 	mgr.InitializeAll();
-	mgr.TryInstallOnDemand();
+	mgr.TryInstallOnDemand(); 
 	SetOriginalGetProcAddress(OriginalGetProcAddress);
 }
+
+std::wstring WhoIsTheCaller(void* returnAddress)
+{
+	HMODULE hModule = NULL;
+	char callerPath[MAX_PATH] = { 0 };
+
+	// Get the return address from the current function call.
+	// void* returnAddress = _ReturnAddress();
+
+	// Get the base address of the module containing the return address.
+	if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		(LPCSTR)returnAddress, &hModule))
+	{
+		// Get the full path of the calling module.
+		GetModuleFileNameA(hModule, callerPath, sizeof(callerPath));
+		auto path = std::filesystem::path(callerPath);
+
+		return path.filename().wstring();
+	}
+
+	return L"";
+}
+
+static HMODULE WINAPI WrappedLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
+{
+	auto result = OriginalLoadLibraryExW(lpLibFileName, hFile, dwFlags);
+	TryInstallHooksOnDemand();
+
+	return result;
+}
+
 
 FARPROC WINAPI _DetourGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 {
 	std::wstring modName = Common::GetModuleFilePath(hModule).wstring();
+//	if (IS_INTRESOURCE(lpProcName))
+//		LOG_DEBUG(L"[_DetourGetProcAddress] Module: " + modName + L" | Ordinal: " + std::to_wstring(reinterpret_cast<uintptr_t>(lpProcName)));
+//	else
+//		LOG_DEBUG(L"[_DetourGetProcAddress] Module: " + modName + L" | Function: " + ToWideString(std::string(lpProcName)));
+
+	//std::wstring modName = Common::GetModuleFilePath(hModule).wstring();
+
+	if (modName == L"amdxc64.dll") {
+		//LOG_WARNING(L"[LOADER] Blocking " + modName + L":" + ToWideString(std::string(lpProcName)) + L" due to NVIDIA GPU driver presence");
+		//return nullptr;
+	}
 
 	auto alias = ProcAliasRegistry::Instance().TryResolve(hModule, lpProcName);
 	if (alias) {
@@ -64,6 +111,13 @@ FARPROC WINAPI _DetourGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 FARPROC WINAPI DetourGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 {
 	std::wstring modName = Common::GetModuleFilePath(hModule).wstring();
+	//if (IS_INTRESOURCE(lpProcName))
+	//	LOG_DEBUG(L"[_DetourGetProcAddress] Module: " + modName + L" | Ordinal: " + std::to_wstring(reinterpret_cast<uintptr_t>(lpProcName)));
+	//else
+	//	LOG_DEBUG(L"[_DetourGetProcAddress] Module: " + modName + L" | Function: " + ToWideString(std::string(lpProcName)));
+
+
+	//std::wstring modName = Common::GetModuleFilePath(hModule).wstring();
 #ifdef PROCLOAD_DEBUG
 
 	if (lpProcName) {
@@ -71,6 +125,10 @@ FARPROC WINAPI DetourGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 	}
 
 #endif
+	if (modName == L"amdxc64.dll") {
+		//LOG_WARNING(L"[LOADER] Blocking " + modName + L":" + ToWideString(std::string(lpProcName)) + L" due to NVIDIA GPU driver presence");
+		//return nullptr;
+	}
 
 	auto alias = ProcAliasRegistry::Instance().TryResolve(hModule, lpProcName);
 	if (alias) {
@@ -112,6 +170,26 @@ FARPROC WINAPI DetourGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 
 	if (endsWith(modName, L"nvngx_dlssg.dll")) {
 		LOG_WARNING(L"[INIT] Detected DLSSG function: " + ToWideString(std::string(lpProcName)));
+
+		if (ToWideString(std::string(lpProcName)) == L"NVSDK_NGX_D3D12_CreateFeature1") {
+			LOG_ERROR(L"[INIT] Disabling DLSSG function: " + ToWideString(std::string(lpProcName)));
+			return nullptr;
+		}
+
+		if (ToWideString(std::string(lpProcName)) == L"NVSDK_NGX_D3D12_CreateFeature2") {
+			LOG_ERROR(L"[INIT] Disabling DLSSG function: " + ToWideString(std::string(lpProcName)));
+			return nullptr;
+		}
+
+		if (ToWideString(std::string(lpProcName)) == L"NVSDK_NGX_D3D12_Init_Ext1") {
+			LOG_ERROR(L"[INIT] Disabling DLSSG function: " + ToWideString(std::string(lpProcName)));
+			return nullptr;
+		}
+
+		if (ToWideString(std::string(lpProcName)) == L"NVSDK_NGX_D3D12_Init_Ext2") {
+			LOG_ERROR(L"[INIT] Disabling DLSSG function: " + ToWideString(std::string(lpProcName)));
+			return nullptr;
+		}
 		//result = DetourNgx(hModule, lpProcName);
 		//result = GetProcAddress(Common::GetModuleHandle(), lpProcName);
 		//return result;
@@ -127,27 +205,7 @@ HMODULE WINAPI DetourLoadLibraryW(LPCWSTR lpLibFileName)
 	return DetourLoadLibraryExW(lpLibFileName, NULL, 0);
 }
 
-std::wstring WhoIsTheCaller(void* returnAddress)
-{
-	HMODULE hModule = NULL;
-	char callerPath[MAX_PATH] = { 0 };
 
-	// Get the return address from the current function call.
-	// void* returnAddress = _ReturnAddress();
-
-	// Get the base address of the module containing the return address.
-	if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-		(LPCSTR)returnAddress, &hModule))
-	{
-		// Get the full path of the calling module.
-		GetModuleFileNameA(hModule, callerPath, sizeof(callerPath));
-		auto path = std::filesystem::path(callerPath);
-
-		return path.filename().wstring();
-	}
-
-	return L"";
-}
 
 BOOL WINAPI DetouredFreeLibrary(HMODULE hLibModule)
 {
@@ -185,16 +243,6 @@ BOOL WINAPI DetouredFreeLibrary(HMODULE hLibModule)
 	return pOriginalFreeLibrary(hLibModule);
 }
 
-static HMODULE WINAPI WrappedLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
-{
-	auto result = OriginalLoadLibraryExW(lpLibFileName, hFile, dwFlags);
-	TryInstallHooksOnDemand();
-
-	return result;
-}
-
-#include "Console.h"
-#include "Optiscaler.h"
 
 HMODULE WINAPI _DetourLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 {
@@ -233,7 +281,6 @@ HMODULE WINAPI _DetourLoadLibraryW(LPCWSTR lpLibFileName)
 HMODULE WINAPI DetourLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 {
 	HMODULE result = nullptr;
-
 	//LOG_WARNING(L"[LOADER] Loading " + std::wstring(lpLibFileName));
 	
 	bool shouldExit = false;
@@ -249,25 +296,40 @@ HMODULE WINAPI DetourLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD d
 		return (HMODULE)NVNGX_HMODULE;
 	}
 
+	if (endsWith(lpLibFileName, L"nvngx.dll") || endsWith(lpLibFileName, L"nvngx_dlssg.dll")) {
+		static bool isOptiActive = false;
+		if (!isOptiActive) {
+			OptiScalerConfig cfg{};
+			cfg.spoof_as_enabler = false;
+			//cfg.isFrs4UpdateOff = Validator::Is_NVNGXDLLPresent() == 1;
+			//LOG_INFO(L"[LOADER] Disabling FSR4 update check!");
+			auto opti = Common::LoadPlugin(L"dlss-enabler-upscaler.dll");
+
+			if (opti != nullptr) {
+				// @todo: fixme!
+				ctx.ngx.isEmbeddedNgxUsed = false;
+				ctx.isOptiscalerInitialized = true;
+			}
+			else if (ctx.ngx.isEmbeddedNgxUsed && !ctx.isOptiscalerInitialized) {
+				LOG_INFO(L"[LOADER] Initializing Optiscaler");
+				if (!OptiScaler_Init(Common::GetModuleHandle(), &cfg)) {}
+				LOG_INFO(L"[LOADER] Initializing Optiscaler: Successful");
+				ctx.isOptiscalerInitialized = true;
+				Console::ResetLogging();
+			}
+
+			isOptiActive = true;
+		}
+	}
 	if (endsWith(lpLibFileName, L"nvngx.dll")) {
 		if (!endsWith(lpLibFileName, L"_nvngx.dll")) {
 			result = (HMODULE)NVNGX_HMODULE;
 		}
 
 		LOG_INFO(L"[LOADER] Loading " + std::wstring(lpLibFileName));
-		OptiScalerConfig cfg{};
 
-		static bool isOptiActive = false;
 
-		if (!isOptiActive) {
-			cfg.spoof_as_enabler = false;
-			if (ctx.ngx.isEmbeddedNgxUsed) {
-				if (!OptiScaler_Init(Common::GetModuleHandle(), &cfg)) {}
-				ctx.isOptiscalerInitialized = true;
-				Console::ResetLogging();
-			}
-			isOptiActive = true;
-		}
+		
 		if (!ctx.ngx.isRealNgxPresent) {
 			return WrappedLoadLibraryExW(L"nvngx.dll", hFile, dwFlags);
 		}

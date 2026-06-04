@@ -5,6 +5,7 @@
 #include "../Utils/Kernel32Proxy.h"
 #include "../Utils/Validator.h"
 #include "../Utils/Autoconfig.h"
+#include "../Utils/Optiscaler.h"
 
 static std::wstring dlssEnablerVersion = L"";  
 static std::wstring bundledFSR3ModVersion = L"1.0";
@@ -67,6 +68,10 @@ void Core::ShowDiagnostics()
 
 void Core::Finish(HINSTANCE hModule)
 {
+	if (ctx.isOptiscalerInitialized) {
+		OptiScaler_Shutdown();
+	}
+
 	DetachDetours();
 }
 
@@ -120,6 +125,39 @@ void Core::Initialize(HINSTANCE hModule)
 	if (!ctx.isDlssEnablerOn) {
 		return;
 	}
+
+	auto optiPatcher = L"plugins\\OptiPatcher.asi";
+	if (Common::IsPluginPresent(optiPatcher)) {
+		typedef void (*PFN_InitializeASI)(void);
+		typedef bool (*PFN_PatchResult)(void);
+
+
+		auto patcher = Common::LoadPlugin(optiPatcher);
+		LOG_WARNING(L"[PATCHER] OptiPatcher detected and loaded");
+		auto init = (PFN_InitializeASI) GetProcAddress(patcher, "InitializeASI");
+		auto patchResult = (PFN_PatchResult) GetProcAddress(patcher, "PatchResult");
+
+		if (init != nullptr)
+			init();
+
+		if (patchResult != nullptr) {
+			auto pr = patchResult();
+
+			if (pr) {
+				LOG_INFO(L"[PATCHER] Game patching is successful");
+
+				LOG_INFO(L"[PATCHER] Disabling spoofing");
+				ctx.isOptiPatcherActive = true;
+			}
+			else {
+				LOG_ERROR(L"[PATCHER] Game patching failed");
+			}
+		} 
+
+	}
+	//LoadLibraryW(L"nvngx.dll");
+
+
 
 	Validator::ValidateHAGSSetting(Validator::GetHAGSRegistrySetting());
 	Validator::ValidateNvidiaSignatureSetting(Validator::GetNVIDIASignatureSetting());

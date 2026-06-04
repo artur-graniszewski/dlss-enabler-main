@@ -16,30 +16,15 @@
 #include <unordered_set>
 #include "../Includes/NvParamImp.h"
 #include "GpuHelpers.h"
+#include "DlssgLazyHook.h"
 
 // Global singletons for the Dlss module (kept minimal and internal)
 std::unique_ptr<DLSSG::DlssgProxy> dlssgModule;
 std::unique_ptr<NGX::NgxProvider> ngxProvider;
-static std::unique_ptr<BackendManager> ngxBackends;
-NgxRuntimeState ngxRuntimeState;
-
-// Tiny default logger & loader that forward to your current logger and Win32
-class DefaultLogger : public INgxLogger {
-public:
-	void Info(const std::wstring msg) override { Console::Info(msg); }
-	void Warning(const std::wstring msg) override { Console::Warning(msg); }
-	void Error(const std::wstring msg) override { Console::Error(msg); }
-};
-
-class DefaultBackendLoader : public IBackendLoader {
-public:
-	HMODULE Load(const std::wstring& path) override { return ::LoadLibraryW(path.c_str()); }
-	FARPROC Resolve(HMODULE module, const char* name) override { return ::GetProcAddress(module, name); }
-
-};
-
-static DefaultLogger globalLogger;
-static DefaultBackendLoader globalNgxLoader;
+std::unique_ptr<BackendManager> ngxBackends;
+extern NgxRuntimeState ngxRuntimeState;
+extern DefaultLogger globalLogger;
+extern DefaultBackendLoader globalNgxLoader;
 
 #define CALL_NGX_EXPORT_IMPL(ExportName) return reinterpret_cast<decltype(&ExportName)>(GetOriginalExportCached(#ExportName))
 #define HOOK_NVNGX_FUNCTION(name) \
@@ -59,7 +44,7 @@ static GetProcAddress_t OriginalGetProcAddress = GetProcAddress;
 
 bool isEvalFeatReported = false;
 
-VkDevice vkDevice;
+VkDevice vkDevice2;
 ID3D12Device* dx12Device;
 ID3D11Device* dx11Device;
 static int initCallsHandled = 0;
@@ -88,11 +73,14 @@ static HMODULE GetUpscalerHandle(bool isSilentMode = false)
 		return nullptr;
 	}
 
-	if (ctx.ngx.isEmbeddedNgxUsed) {
+	hModule = LoadLibraryW(L"dlss-enabler-optiscaler.dll");
+	if (ctx.ngx.isEmbeddedNgxUsed && hModule == nullptr) {
 		hModule = Common::GetModuleHandle();
 	}
 	else {
-		hModule = LoadLibraryW(L"dlss-enabler-upscaler.dll");
+		// @todo: fixme!
+		ctx.ngx.isEmbeddedNgxUsed = true;
+		hModule = LoadLibraryW(L"dlss-enabler-optiscaler.dll");
 	}
 
 	if (hModule == nullptr) {
@@ -148,14 +136,17 @@ static HMODULE GetFrameGeneratorHandle()
 
 void SetOriginalGetProcAddress(GetProcAddress_t proc)
 {
-	if (!ngxBackends) ngxBackends = std::make_unique<BackendManager>(globalNgxLoader, globalLogger);
-	if (ctx.ngx.isEmbeddedDlssgUsed) SetProcResolverPrefix("DLSSG_");
-	IProcResolver& resolver = GetPrefixedProcResolver();
-	if (!dlssgModule) dlssgModule = std::make_unique<DLSSG::DlssgProxy>(*ngxBackends, globalLogger, ngxRuntimeState, resolver);
-	if (!ngxProvider) ngxProvider = std::make_unique<NGX::NgxProvider>(globalLogger, ngxRuntimeState, resolver);
-
 	OriginalGetProcAddress = proc;
 	InstallOriginalGetProcAddress(OriginalGetProcAddress);
+
+	// Detect fake NVIDIA driver and initialize DLSSG hooks as fallback
+	static bool driverChecked = false;
+	if (driverChecked) return;
+	driverChecked = true;
+
+	if (Validator::IsFakeNvidiaDriverDetected()) {
+		InitializeDlssgHooks();
+	}
 }
 
 static void NGX_ReportCurrentGPU(IDXGIAdapter* Adapter)
@@ -277,7 +268,7 @@ static bool InitializeUpscaler(NVSDK_NGX_EngineType InEngineType = NVSDK_NGX_ENG
 
 	isInitCompleted = true;
 
-	std::wstring upscalerFile = L"dlss-enabler-upscaler.dll";
+	std::wstring upscalerFile = L"dlss-enabler-optiscaler.dll";
 	std::wstring libXessFile = L"libxess.dll";
 	std::wstring nvApiFile = L"nvapi64.dll";
 	std::wstring upscalerVersion = L"";
@@ -458,7 +449,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D12_GetCapabilityParameters(NVSDK_NGX_Paramet
 	LOG_NGX_INFO(L"Populating NGX parameters");
 	NGX_PopulateNgxParameters(OutParameters, false);
 	HMODULE fgHandle = GetFrameGeneratorHandle();
-	
+
 	if (fgHandle) {
 		dlssgModule->PopulateParametersD3D12(*OutParameters);
 	}
@@ -546,7 +537,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_AllocateParameters(NVSDK_NGX_Parameter**
 
 	result = org_NVSDK_NGX_VULKAN_AllocateParameters(OutParameters);
 	//*OutParameters = getNGXParameters();
-	
+
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 }
 
@@ -574,9 +565,9 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_DestroyParameters(NVSDK_NGX_Parameter* I
 {
 	LOG_NGX_FUNCTION_CALL();
 	DISALLOW_NVNGX_PROXY_MODE();
-	
+
 	NVSDK_NGX_Result result = org_NVSDK_NGX_VULKAN_DestroyParameters(InParameters);
-	
+
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 }
 
@@ -586,7 +577,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D11_CreateFeature(ID3D11DeviceContext* InCmdL
 	NVSDK_NGX_Result result = NVSDK_NGX_Result_Success;
 
 	LOG_NGX_FUNCTION_CALL_WITH_ARG(L"FeatureID: " + std::to_wstring(InFeatureID) + L" (" + NGX_FeatureIdToString(InFeatureID) + L")");
-	
+
 	if (NGX_HandleUnsupportedFeature(InFeatureID, OutHandle)) {
 		LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 	}
@@ -594,7 +585,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D11_CreateFeature(ID3D11DeviceContext* InCmdL
 	result = org_NVSDK_NGX_D3D11_CreateFeature(InCmdList, InFeatureID, InParameters, OutHandle);
 	if (NVSDK_NGX_SUCCEED(result)) {
 		ngxRuntimeState.isUpscalerResolutionReported = false;
-			
+
 		LOG_NGX_FUNCTION_CALL_WITH_ARG(L"ID: " + std::to_wstring((*OutHandle)->Id));
 	}
 
@@ -605,7 +596,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_CreateFeature(void* InCmdBuffer, NVSDK_N
 	NVSDK_NGX_Parameter* InParameters, NVSDK_NGX_Handle** OutHandle)
 {
 	NVSDK_NGX_Result result = NVSDK_NGX_Result_Success;
-	
+
 	LOG_NGX_FUNCTION_CALL_WITH_ARG(L"FeatureID: " + std::to_wstring(InFeatureID) + L" (" + NGX_FeatureIdToString(InFeatureID) + L")");
 
 	NGX_CreateFeature(InFeatureID, InParameters);
@@ -660,7 +651,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_CreateFeature1(const VkDevice InDevice, 
 
 	if (NVSDK_NGX_SUCCEED(result)) {
 		NGX_RegisterFeature(InFeatureID, *OutHandle);
-			
+
 		if (InFeatureID == NVSDK_NGX_Feature_SuperSampling) {
 			ngxRuntimeState.isUpscalerResolutionReported = false;
 		}
@@ -687,7 +678,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D12_CreateFeature(ID3D12GraphicsCommandList* 
 		result = dlssgModule->CreateD3D12(InCmdList, InFeatureID, InParameters, OutHandle);
 	}
 	else {
-			
+
 		LOG_NGX_INFO(L"proxied");
 		result = org_NVSDK_NGX_D3D12_CreateFeature(InCmdList, InFeatureID, InParameters, OutHandle);
 	}
@@ -846,7 +837,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D11_ReleaseFeature(NVSDK_NGX_Handle* Instance
 		NGX_UnregisterFeature(InstanceHandle);
 		LOG_NGX_FUNCTION_CALL_AND_RETURN(NVSDK_NGX_Result_Success);
 	}
-	
+
 	LOG_NGX_FUNCTION_CALL_WITH_ARG(L"ID: " + std::to_wstring((InstanceHandle)->Id));
 	result = org_NVSDK_NGX_D3D11_ReleaseFeature(InstanceHandle);
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
@@ -924,7 +915,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D11_Init_ProjectID(const char* InProjectId, N
 	LOG_NGX_INFO(L"proxied");
 	NVAPI_DISABLE_GPU_SPOOFING();
 	result = org_NVSDK_NGX_D3D11_Init_ProjectID(InProjectId, InEngineType, InEngineVersion, InApplicationDataPath, InDevice, InSDKVersion, InFeatureInfo);
-	
+
 	NGX_ReportDlssVersions();
 
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
@@ -935,7 +926,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Init_ProjectID(const char* InProjectId, 
 	NVNGX_COUNT_INIT_CALLS();
 	ctx.isVulkanApplication = true;
 	InitializeUpscaler(InEngineType, InEngineVersion);
-	vkDevice = InDevice;
+	vkDevice2 = InDevice;
 	Vulkan_HookDeviceFunctions();
 
 	NVSDK_NGX_Result result = NVSDK_NGX_Result_Success;
@@ -951,12 +942,12 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Init_ProjectID(const char* InProjectId, 
 	LOG_NGX_INFO(L"proxied");
 	NVAPI_DISABLE_GPU_SPOOFING();
 	result = org_NVSDK_NGX_VULKAN_Init_ProjectID(InProjectId, InEngineType, InEngineVersion, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA, InFeatureInfo, InSDKVersion);
-	
+
 	if (!ctx.ngx.isDlssgEnabled && (ctx.nvapi.isProxyLoaded || ctx.nvapi.isMockEnabled)) {
 		HMODULE fgHandle = GetFrameGeneratorHandle();
 		if (fgHandle) {
 			auto InParams = getNGXParameters();
-		
+			LOG_DEBUG(L"proxied to DLSSG-to-FSR3 mod");
 			result = dlssgModule->InitVulkan(0x1227, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA, InFeatureInfo, InSDKVersion);
 			if (NVSDK_NGX_FAILED(result)) {
 				LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
@@ -965,7 +956,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Init_ProjectID(const char* InProjectId, 
 	}
 
 	NGX_ReportDlssVersions();
-	
+
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 }
 
@@ -1062,7 +1053,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Init_Ext(unsigned long long InApplicatio
 	NVNGX_COUNT_INIT_CALLS();
 	ctx.isVulkanApplication = true;
 	InitializeUpscaler();
-	vkDevice = InDevice;
+	vkDevice2 = InDevice;
 	Vulkan_HookDeviceFunctions();
 
 	LOG_NGX_FUNCTION_CALL();
@@ -1070,14 +1061,14 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Init_Ext(unsigned long long InApplicatio
 	DISALLOW_NVNGX_PROXY_MODE();
 
 	NGX_InitReport(InApplicationDataPath, InSDKVersion, &InFeatureInfo);
-	
+
 	NVAPI_DISABLE_GPU_SPOOFING();
 	NVSDK_NGX_Result result = org_NVSDK_NGX_VULKAN_Init_Ext(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InSDKVersion, InFeatureInfo);
 	if (!ctx.ngx.isDlssgEnabled && (ctx.nvapi.isProxyLoaded || ctx.nvapi.isMockEnabled)) {
 		HMODULE fgHandle = GetFrameGeneratorHandle();
 		if (fgHandle) {
 			auto InParams = getNGXParameters();
-			
+			LOG_DEBUG(L"proxied to DLSSG-to-FSR3 mod");
 			result = dlssgModule->InitVulkanExt(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InSDKVersion, InFeatureInfo);
 			if (NVSDK_NGX_FAILED(result)) {
 				LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
@@ -1094,28 +1085,28 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Init_Ext2(unsigned long long InApplicati
 	NVNGX_COUNT_INIT_CALLS();
 	ctx.isVulkanApplication = true;
 	InitializeUpscaler();
-	vkDevice = InDevice;
+	vkDevice2 = InDevice;
 	Vulkan_HookDeviceFunctions();
 
 	LOG_NGX_FUNCTION_CALL();
-	
+
 	NGX_InitReport(InApplicationDataPath, InSDKVersion, &InFeatureInfo);
-	
+
 	NVAPI_DISABLE_GPU_SPOOFING();
 	NVSDK_NGX_Result result = org_NVSDK_NGX_VULKAN_Init_Ext2(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA, InSDKVersion, InFeatureInfo);
-	
+
 	if (!ctx.ngx.isDlssgEnabled) {
 		HMODULE fgHandle = GetFrameGeneratorHandle();
 		if (fgHandle) {
 			auto InParams = getNGXParameters();
-			
+			LOG_DEBUG(L"proxied to DLSSG-to-FSR3 mod");
 			result = dlssgModule->InitVulkanExt2(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA, InSDKVersion, InFeatureInfo);
 			if (NVSDK_NGX_FAILED(result)) {
 				LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 			}
 		}
 	}
-	
+
 	NGX_ReportDlssVersions();
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 }
@@ -1125,7 +1116,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Init(unsigned long long InApplicationId,
 	NVNGX_COUNT_INIT_CALLS();
 	ctx.isVulkanApplication = true;
 	InitializeUpscaler();
-	vkDevice = InDevice;
+	vkDevice2 = InDevice;
 	Vulkan_HookDeviceFunctions();
 
 	LOG_NGX_FUNCTION_CALL();
@@ -1136,12 +1127,12 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Init(unsigned long long InApplicationId,
 
 	NVAPI_DISABLE_GPU_SPOOFING();
 	NVSDK_NGX_Result result = org_NVSDK_NGX_VULKAN_Init(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA, InFeatureInfo, InSDKVersion);
-	
+
 	if (!ctx.ngx.isDlssgEnabled && (ctx.nvapi.isProxyLoaded || ctx.nvapi.isMockEnabled)) {
 		HMODULE fgHandle = GetFrameGeneratorHandle();
 		if (fgHandle) {
 			auto InParams = getNGXParameters();
-			
+			LOG_DEBUG(L"proxied to DLSSG-to-FSR3 mod");
 			result = dlssgModule->InitVulkan(InApplicationId, InApplicationDataPath, InInstance, InPD, InDevice, InGIPA, InGDPA, InFeatureInfo, InSDKVersion);
 			if (NVSDK_NGX_FAILED(result)) {
 				LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
@@ -1234,7 +1225,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D12_Init_Ext(unsigned long long InApplication
 
 	if (false) {
 		LOG_NGX_INFO(L"rerouted to DLSS/DLSSG");
-		
+
 		auto InParams = getNGXParameters();
 		result = dlssgModule->InitD3D12Ext(InApplicationId, InApplicationDataPath, InDevice, InSDKVersion, InParams);
 		//forceHighestArch = true;
@@ -1245,7 +1236,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D12_Init_Ext(unsigned long long InApplication
 
 	//NVAPI_DISABLE_GPU_SPOOFING();
 	ctx.emulation.forceHighestArch = ctx.emulation.isHighestArch;
-		
+
 	result = org_NVSDK_NGX_D3D12_Init_Ext(InApplicationId, InApplicationDataPath, InDevice, InSDKVersion, InFeatureInfo);
 	NGX_ReportDlssVersions();
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
@@ -1284,7 +1275,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D12_Shutdown1(ID3D12Device* D3DDevice)
 		dx12Device->Release();
 		dx12Device = nullptr;
 	}
-		
+
 	NVAPI_ENABLE_GPU_SPOOFING();
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 }
@@ -1292,14 +1283,14 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D12_Shutdown1(ID3D12Device* D3DDevice)
 NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Shutdown1(void* Device)
 {
 	LOG_NGX_FUNCTION_CALL();
-	
+
 	DISALLOW_NVNGX_PROXY_MODE();
-	
+
 	LOG_NGX_INFO(L"proxied");
 	NVSDK_NGX_Result result = org_NVSDK_NGX_VULKAN_Shutdown1(Device);
 
-	vkDevice = nullptr;
-	
+	vkDevice2 = nullptr;
+
 	NVAPI_ENABLE_GPU_SPOOFING();
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 }
@@ -1310,7 +1301,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D11_Shutdown()
 
 	LOG_NGX_INFO(L"proxied");
 	NVSDK_NGX_Result result = org_NVSDK_NGX_D3D11_Shutdown();
-	
+
 	if (dx11Device) {
 		dx11Device->Release();
 		dx11Device = nullptr;
@@ -1336,7 +1327,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_D3D12_Shutdown()
 		dx12Device->Release();
 		dx12Device = nullptr;
 	}
-		
+
 	NVAPI_ENABLE_GPU_SPOOFING();
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 }
@@ -1351,16 +1342,16 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_Shutdown()
 	if (GetFrameGeneratorHandle()) {
 		result = dlssgModule->ShutdownVulkan();
 	}
-	 
+
 	LOG_NGX_INFO(L"proxied");
 	result = org_NVSDK_NGX_VULKAN_Shutdown();
-	vkDevice = nullptr;
+	vkDevice2 = nullptr;
 	NVAPI_ENABLE_GPU_SPOOFING();
 	LOG_NGX_FUNCTION_CALL_AND_RETURN(result);
 }
 
-NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_GetFeatureDeviceExtensionRequirements(void *Instance,
-	void *PhysicalDevice,
+NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_GetFeatureDeviceExtensionRequirements(void* Instance,
+	void* PhysicalDevice,
 	const NVSDK_NGX_FeatureDiscoveryInfo* FeatureDiscoveryInfo,
 	uint32_t* OutExtensionCount,
 	void** OutExtensionProperties)
@@ -1400,7 +1391,7 @@ NVSDK_NGX_Result proxy_NVSDK_NGX_VULKAN_GetFeatureInstanceExtensionRequirements(
 NVSDK_NGX_Result proxy_NVSDK_NGX_UpdateFeature(const NVSDK_NGX_Application_Identifier* ApplicationId, const NVSDK_NGX_Feature FeatureID)
 {
 	LOG_NGX_FUNCTION_CALL_WITH_ARG(L"FeatureID: " + std::to_wstring(FeatureID) + L" (" + NGX_FeatureIdToString(FeatureID) + L")");
-	
+
 	if (!ctx.ngx.isProxyEnabled) {
 		LOG_NGX_INFO(L"proxied");
 		org_NVSDK_NGX_UpdateFeature(ApplicationId, FeatureID);

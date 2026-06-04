@@ -372,7 +372,6 @@ void NGX_GetFeatureRequirements(NVSDK_NGX_FeatureDiscoveryInfo* FeatureDiscovery
 		}
 	}
 
-	ctx.ngx.isDlssgSupportedByHardware = true;
 	RequirementInfo->MinHWArchitecture = 10;
 	strcpy_s(RequirementInfo->MinOSVersion, "10.0.0.0");
 }
@@ -493,7 +492,7 @@ void NGX_EvaluateFeature(NVSDK_NGX_Handle* InFeatureHandle, NVSDK_NGX_Parameter*
 			InParameters->Set("FramerateLimit", (int)ctx.reflex.desiredFpsLimit);
 		}
 		else {
-			LOG_INFO(L"Adjusting FPS limit to: " + std::to_wstring(frameRate));
+			//LOG_INFO(L"Adjusting FPS limit to: " + std::to_wstring(frameRate));
 			ctx.reflex.desiredFpsLimit = frameRate;
 			ctx.reflex.realFpsLimit = (double)frameRate;
 		}
@@ -617,7 +616,38 @@ void NGX_Logger(const char* message, NVSDK_NGX_Logging_Level loggingLevel, NVSDK
 {
 	std::wstring msg = NGX_FormatLogEntry(std::string(message));
 	if (msg != L"") {
-		Console::Info(msg);
+
+		// Throttle spammy log messages from OptiScaler/NVNGX
+		static const std::vector<std::wstring> throttledPrefixes = {
+			L"ProcessEvaluateParams Render Size:",
+			L"AmdExtFfxApi::UpdateFfxApiProvider UpdateFfxApiProvider",
+			L"Failed to get attributes for file",
+			L"ffxDispatch_Dx12 Not in _contexts",
+			L"CheckForGPU",
+		};
+
+		static std::unordered_map<std::wstring, int> throttleCounts;
+		constexpr int MAX_LOG_REPEATS = 10;
+
+		bool muted = false;
+		for (const auto& prefix : throttledPrefixes) {
+			if (msg.find(prefix) != std::wstring::npos) {
+				int& count = throttleCounts[prefix];
+				count++;
+				if (count == MAX_LOG_REPEATS + 1) {
+					Console::Warning(L"[OPTI] Log entry \"" + prefix + L"...\" repeated more than "
+						+ std::to_wstring(MAX_LOG_REPEATS) + L" times, further occurrences will be muted");
+				}
+				if (count > MAX_LOG_REPEATS) {
+					muted = true;
+				}
+				break;
+			}
+		}
+
+		if (!muted) {
+			Console::Info(msg);
+		}
 	}
 }
 

@@ -409,5 +409,39 @@ namespace NGXFrontend
             LOG_INFO(L"[NVNGX] NVNGX Frontend initialized");
             return true;
         }
+
+        void Uninstall(Context& ctx, IDetourApi& api) override {
+            // Intentionally a no-op.
+            //
+            // Despite the presence of a DetourTxn in Install(), this hook does
+            // not actually install any Detours trampolines at runtime - all
+            // NGX_ATTACH calls are commented out; only NGX_ALIAS is used, which
+            // registers pointers in ProcAliasRegistry. There is therefore
+            // nothing to DetourDetach here.
+            //
+            // We also deliberately do NOT:
+            //   1) Call ProcAliasRegistry::Clear() - the registry has no mutex
+            //      and a concurrent TryResolve() from a game thread that is
+            //      mid-way through a hooked GetProcAddress call would race it.
+            //   2) Destroy the global ngxFrontend unique_ptr - the game may
+            //      already have cached proxy function pointers (returned from
+            //      earlier GetProcAddress calls) in its IAT; those pointers
+            //      refer into ngxFrontend's members, so destroying it would
+            //      leave dangling references that crash on the next NGX call.
+            //
+            // Process exit handles both resources correctly:
+            //   - the static ngxFrontend is destroyed during DLL unload,
+            //   - ProcAliasRegistry's fixed-size array has trivial destruction.
+            //
+            // If a real teardown is ever needed (e.g. for hot-reload of the
+            // DLL without restarting the game), it requires first:
+            //   - adding a mutex to ProcAliasRegistry,
+            //   - ensuring no game-side IAT entry points into ngxFrontend
+            //     members (e.g. by making proxy dispatchers stateless
+            //     singletons), and
+            //   - fixing the dangling ngxBackends reference in Install()
+            //     (local unique_ptr passed by reference to NgxFrontend that
+            //     outlives its owner).
+        }
     };
 }

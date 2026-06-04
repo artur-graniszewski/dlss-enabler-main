@@ -3,6 +3,7 @@
 
 struct OptiScalerConfig {
     bool spoof_as_enabler = true;
+    bool isFrs4UpdateOff = false;
 };
  
 bool OptiScaler_Init(HMODULE self, const OptiScalerConfig* cfg);

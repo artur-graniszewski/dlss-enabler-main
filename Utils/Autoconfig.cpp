@@ -4,6 +4,8 @@
 #include "Console.h"
 #include "../Core/Context.h"
 #include "Validator.h"
+#include "NgxFileSigner.h"
+#include "Optiscaler.h"
 #define RTX_4090_FULL_NAME "NVIDIA GeForce RTX 4090 Ti"
 
 static bool IsRunningUnderWindows()
@@ -74,6 +76,66 @@ static bool IsRunningUnderWindows()
 	return isWindows;
 }
 
+void CheckDlssgState()
+{
+	WCHAR buffer[255];
+	std::wstring fileName2 = Common::GetModuleDirectory() + L"dlss-enabler.ini";
+
+	LPCWSTR lpFileName2 = fileName2.c_str();
+	if (GetFileAttributesW(lpFileName2) == INVALID_FILE_ATTRIBUTES) {
+		const auto path = std::filesystem::path(lpFileName2);
+		const auto fileName = path.filename().wstring();
+		const auto parentDir = path.parent_path().parent_path().wstring();
+		auto newPath = std::wstring(parentDir + L"\\" + fileName);
+		lpFileName2 = newPath.c_str();
+
+		if (GetFileAttributesW(lpFileName2) == INVALID_FILE_ATTRIBUTES) {
+			fileName2 = Common::GetModuleDirectory() + L"_storage_\\dlss-enabler.ini";
+			lpFileName2 = fileName2.c_str();
+
+			if (GetFileAttributesW(lpFileName2) == INVALID_FILE_ATTRIBUTES) {
+				LOG_INFO(L"[INIT] Loading of the dlss-enabler.ini config file failed (file is missing)");
+				ctx.isFirstRun = true;
+				ctx.ngx.isDlssgDisabled = true;
+				return;
+			}
+		}
+	}
+
+	auto dwResult = GetPrivateProfileStringW(L"Debug", L"DlssgDisabled", L"false", buffer, 255, lpFileName2);
+	auto value = std::wstring(buffer);
+
+	if (value == L"true") {
+		ctx.ngx.isDlssgDisabled = true;
+		LOG_INFO(L"[INIT] Disabling native DLSSG implementation");
+	}
+
+	dwResult = GetPrivateProfileStringW(L"Debug", L"UseFsrOnly", L"true", buffer, 255, lpFileName2);
+	value = std::wstring(buffer);
+
+	if (value == L"true") {
+		ctx.ngx.isDlssgDisabled = true;
+		LOG_INFO(L"[INIT] Disabling native DLSSG implementation");
+	}
+
+	dwResult = GetPrivateProfileStringW(L"Debug", L"HybridMfgForced", L"false", buffer, 255, lpFileName2);
+	value = std::wstring(buffer);
+
+	if (value == L"true") {
+		ctx.ngx.isHybridMfgForced = true;
+		LOG_INFO(L"[INIT] Forcing hybrid DLSSG MFG implementation");
+	}
+}
+
+bool BeforeDeadline()
+{
+	using namespace std::chrono;
+	const auto now = system_clock::now();
+	const auto deadline = sys_days{ April / 10 / 2026 };
+	return true;
+	return now < deadline;
+}
+
 bool Autoconfig::Initialize()
 {
 	auto filePath = Common::GetProcessFilePath();
@@ -83,6 +145,13 @@ bool Autoconfig::Initialize()
 	ctx.ngx.configuredUpscalingMethod = UPSCALING_METHOD_AUTO;
 	ctx.ngx.overrideDlssUpscalerCapability = true;
 	ctx.ngx.enableDlssUpscaler = true;
+	//ctx.streamline.forceLoadDLSSG = true;
+	//ctx.ngx.isDlssgProfilerEnabled = true;
+	//ctx.reflex.isEmulationEnabled = true;
+
+	if (Common::GetModuleFilePath().filename().string() == "dlss-enabler-headless.dll") {
+		ctx.isDlssEnablerOn = false;
+	}
 
 	//ctx.logging.isReflexDebugEnabled = true;
 	ctx.ngx.isEmbeddedDlssgUsed = true;
@@ -96,6 +165,7 @@ bool Autoconfig::Initialize()
 	ctx.ngx.isProxyEnabled = true;
 	ctx.logging.isDebugEnabled = false;
 	ctx.logging.isConsoleEnabled = false;
+	//ctx.ngx.isEmbeddedNgxUsed = !Common::IsPluginPresent(L"dlss-enabler-upscaler.dll");
 
 	Autoconfig::CheckIniFile();
 	Autoconfig::CheckCommandLineParams();
@@ -109,7 +179,7 @@ bool Autoconfig::Initialize()
 		LOG_INFO(L"[INIT] Vulkan based application detected!");
 	}
 
-	std::wstring upscalerFile = L"dlss-enabler-upscaler.dll";
+	std::wstring upscalerFile = L"dlss-enabler-optiscaler.dll";
 	std::wstring upscalerVersion = L"";
 	 
 	if (Common::IsPluginPresent(upscalerFile) && !ctx.ngx.isEmbeddedNgxUsed) {
@@ -145,10 +215,113 @@ bool Autoconfig::Initialize()
 		LOG_WARNING(L"[INIT] Enabling hardware spoofing on Windows Registry level");
 	}
 
+	if (processName == L"PRAGMATA!.exe") {
+		LOG_WARNING(L"[INIT] Remapping DLAA ID due to game bug (3->5)");
+		ctx.ngx.dlaaId = 3;
+	}
+
+	if (processName == L"CrimsonDesert.exe" || processName == L"KingdomCome.exe" || processName == L"missing-hud.exe" 
+		|| processName == L"DyingLightGame_x64_rwdi.exe!"
+		|| processName == L"yysls.exe" // Where winds meet (chinese)
+		|| processName == L"wwm.exe" // Where winds meet (usa)
+		|| processName == L"ArkAscended.exe"
+		) {
+		ctx.ngx.isUiPinningEnabled = true;
+		LOG_WARNING(L"[INIT] HUD pinning enabled due to game bug");
+		LOG_WARNING(L"[INIT] Enabling GhostBuster due to game bug");
+		//ctx.enableDirectSwapchainHooking = true;
+		ctx.ngx.isGhostBustingEnabled = true; 
+		ctx.ngx.isAutoExposureEnabled = true; 
+		ctx.streamline.isSelectiveSpoofingEnabled = true;
+	}
+
+	if (processName == L"DyingLightGame_x64_rwdi.exe") {
+		LOG_WARNING(L"[INIT] Enabling HUDless mask due to game bug");
+		LOG_WARNING(L"[INIT] Enabling GhostBuster due to game bug");
+		ctx.ngx.isHudlessMaskEnabled = true; 
+		//ctx.ngx.isUiTextureEnabled = true;
+		ctx.ngx.isGhostBustingEnabled = true;
+	}
+	//ctx.enableDirectSwapchainHooking = true;
+
+	if (
+		processName == L"acr.exe" // Assetto Corsa
+		||
+		processName == L"TheOuterWorlds2-Win64-Shipping.exe"
+		||
+		processName == L"Remnant2-Win64-Shipping.exe"
+		//||
+		//processName == L"Cyberpunk2077.exe"
+		) {
+		//ctx.ngx.isHudInterpolationEnabled = false;
+		//LOG_WARNING(L"[INIT] HUD interpolation disabled for compatibility reasons");
+	}
+
+	ctx.streamline.actionIntensityBoost = 3.0f;
+	if (processName == L"DS2.exe") {
+		LOG_INFO(L"[INIT] Enabling UI texture support");
+		ctx.ngx.isUiTextureEnabled = true;
+	}
+	if (
+		processName == L"HorizonZeroDawnRemastered.exe"
+		||
+		processName == L"HorizonZeroDawn.exe"
+		||
+		processName == L"HorizonForbiddenWest.exe"
+		||
+		//processName == L"b1-Win64-Shipping.exe"
+		//||
+		//processName == L"b1.exe"
+		//||
+		processName == L"GoWR.exe"
+		||
+		//processName == L"PRAGMATA.exe"  // broken - empty UI texture?
+		//||
+		//processName == L"MafiaTheOldCountry.exe"
+		//||
+		processName == L"MonsterHunterWilds.exe!" // UI in HDR broken
+		) {
+		if (ctx.ngx.isDlssgDisabled) {
+			LOG_INFO(L"[INIT] Enabling UI texture support");
+			ctx.ngx.isUiTextureEnabled = true;
+		}
+		ctx.ngx.isUiTextureEnabled = true;
+	}
+
+	CheckDlssgState();
+	//ctx.enableDirectSwapchainHooking = true;
+	//ctx.ngx.isDlssgDisabled = true;
+
+	if (processName == L"forzahorizon6.exe" && ctx.isFirstRun) {
+		LOG_WARNING(L"[INIT] Enabling Optiscaler Early Init to improve game stability");
+		LOG_WARNING(L"[INIT] Enabling GhostBuster to improve image quality");
+		ctx.ngx.isEarlyInitEnabled = true;
+		ctx.ngx.isGhostBustingEnabled = true;
+	}
+
 	if (processName == L"HorizonForbiddenWest.exe") {
 		LOG_WARNING(L"[INIT] Enabling Reflex emulation to address game microstuttering");
 		ctx.reflex.isEmulationEnabled = true;
 	}
+
+	if (!ctx.ngx.isRealNgxPresent) {
+		auto result = NgxFileSigner::SignNgxFile();
+
+		if (result.IsSuccess()) {
+			LOG_WARNING(L"NGX signed");
+		}
+		else {
+			LOG_WARNING(L"NGX signing failed: " + result.message);
+		}
+
+		//
+		
+	}
+
+	if (ctx.isDlssEnablerOn) {
+		NgxFileSigner::PrimeDlssgModule();
+	}
+	NgxFileSigner::CreateDefaultIniFile(ctx.ngx.isAutoExposureEnabled);
 
 	return true;
 }
@@ -173,7 +346,7 @@ bool Autoconfig::InitializeFrameGeneration()
 	if (!ctx.ngx.isEmbeddedDlssgUsed) {
 		LOG_INFO(L"[DLSSG] Loading frame generation backend: FSR 3." + std::to_wstring(ctx.fsr3fgVersion));
 
-		// some files trigger proxy error 5 in Nukem9 mod dll....
+		// some files trigger proxy error 5 in Nukem9 mod....
 		if (processName != L"ForzaHorizon5.exe") {
 			wrapperFile = L"nvngx-wrapper.dll";
 			HMODULE hModule33 = Common::LoadPlugin(wrapperFile);
@@ -219,8 +392,60 @@ bool Autoconfig::InitializeFrameGeneration()
 	return true;
 }
 
+
 bool Autoconfig::PreloadUpscaler(bool forceLoad)
 {
+	LOG_INFO(L"[DLSS] Preloading upscaling backends");
+	WCHAR buffer[255];
+	std::wstring fileName2 = std::wstring(Common::GetProcessFilePath().remove_filename().wstring() + L"dlss-enabler.ini");
+
+	LPCWSTR lpFileName2 = fileName2.c_str();
+	if (GetFileAttributesW(lpFileName2) == INVALID_FILE_ATTRIBUTES) {
+		const auto path = std::filesystem::path(lpFileName2);
+		const auto fileName = path.filename().wstring();
+		const auto parentDir = path.parent_path().parent_path().wstring();
+		auto newPath = std::wstring(parentDir + L"\\" + fileName);
+		lpFileName2 = newPath.c_str();
+
+		if (GetFileAttributesW(lpFileName2) == INVALID_FILE_ATTRIBUTES) {
+			fileName2 = Common::GetModuleDirectory() + L"_storage_\\dlss-enabler.ini";
+			lpFileName2 = fileName2.c_str();
+
+			if (GetFileAttributesW(lpFileName2) == INVALID_FILE_ATTRIBUTES) {
+				LOG_INFO(L"[INIT] Loading of the dlss-enabler.ini config file failed (file is missing)");
+			}
+		}
+	}
+
+	auto dwResult = GetPrivateProfileStringW(L"Debug", L"EarlyInit", L"false", buffer, 255, lpFileName2);
+	auto value = std::wstring(buffer);
+
+	if (value == L"true") {
+		ctx.ngx.isEarlyInitEnabled = true;
+	}
+
+	dwResult = GetPrivateProfileStringW(L"Debug", L"DisableUI", L"false", buffer, 255, lpFileName2);
+	value = std::wstring(buffer);
+
+	if (value == L"true") {
+		ctx.isUiEnabled = false;
+	}
+
+	if (!Common::IsPluginPresent(L"dlss-enabler-upscaler.dll") && (!ctx.ngx.isRealNgxPresent || ctx.ngx.isEarlyInitEnabled)) {
+		LOG_INFO(L"[DLSS] Loading Optiscaler early on");
+		if (Common::IsPluginPresent(L"dlss-enabler-upscaler.dll")) {
+			Common::LoadPlugin(L"dlss-enabler-upscaler.dll");
+		}
+		else {
+			OptiScalerConfig cfg{};
+			cfg.spoof_as_enabler = false;
+			//cfg.isFrs4UpdateOff = Validator::Is_NVNGXDLLPresent() == 1;
+			//LOG_INFO(L"[LOADER] Disabling FSR4 update check!");
+			if (!OptiScaler_Init(Common::GetModuleHandle(), &cfg)) {}
+		}
+		ctx.isOptiscalerInitialized = true;
+	}
+
 	auto filePath = Common::GetProcessFilePath();
 	std::wstring processName = filePath.filename().wstring();
 
@@ -240,14 +465,14 @@ bool Autoconfig::PreloadUpscaler(bool forceLoad)
 	//	}
 	//}
 
-	LOG_INFO(L"[DLSS] Preloading upscaling backends");
+
 	std::wstring upscalerFile = L"dlss-enabler-upscaler.dll";
 
 	HMODULE upscalerModule = NULL; 
 	ctx.ngx.isRealNgxHidden = false;
 
 	if (!ctx.ngx.isEmbeddedNgxUsed) {
-		upscalerModule = LoadLibraryW(L"dlss-enabler-upscaler.dll");
+		upscalerModule = LoadLibraryW(L"dlss-enabler-optiscaler.dll");
 
 		if (upscalerModule != NULL) {
 			LOG_INFO(L"[DLSS] Upscaler backend loaded successfully");
@@ -952,7 +1177,7 @@ void Autoconfig::CheckCommandLineParams()
 		LOG_ERROR(L"[INIT] Cannot enable Dynamic Frame Generation: FPS target not provided!");
 	}
 
-	if (ctx.reflex.desiredFpsLimit > 0) {
-		LOG_INFO(L"[INIT] Configured to use limit framerate to: " + std::to_wstring(ctx.reflex.desiredFpsLimit) + L" FPS");
-	}
+//	if (ctx.reflex.desiredFpsLimit > 0) {
+//		LOG_INFO(L"[INIT] Configured to use limit framerate to: " + std::to_wstring(ctx.reflex.desiredFpsLimit) + L" FPS");
+//	}
 }

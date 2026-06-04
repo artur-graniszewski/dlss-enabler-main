@@ -91,20 +91,8 @@ struct HookOptiscaler : IHook {
             return false;
         }
         optiStarted = true;
-        LOG_INFO(L"[NVNGX] ~~~~~~~~~~~~~~~~~~~Optiscaler initialized");
+        LOG_INFO(L"[NVNGX] Optiscaler initialized");
         std::wstring modulePath = Common::GetModuleFilePath();
-        return true;
-        OptiScalerConfig cfg{};
-        cfg.spoof_as_enabler = false;
-        if (ctx.ngx.isEmbeddedNgxUsed) {
-            if (!OptiScaler_Init(Common::GetModuleHandle(), &cfg)) {}
-            ctx.isOptiscalerInitialized = true;
-            Console::ResetLogging();
-        }
-
-
-
-        //ProcAliasRegistry::Instance().Clear();
         
         return true;
     }
