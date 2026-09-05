@@ -1,5 +1,7 @@
 //{{NO_DEPENDENCIES}}
-
+// Plik do³¹czany wygenerowany przez œrodowisko Microsoft Visual C++.
+// U¿ywany przez: DLSSEnabler.rc
+// 
 
 // Next default values for new objects
 // 

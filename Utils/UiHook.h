@@ -26,4 +26,8 @@ struct HookUi : IHook {
         SettingsPersistence::Load();
         return true;
     }
+
+    void Uninstall(Context& ctx, IDetourApi& api) override {
+        UxShutdown();
+    }
 };

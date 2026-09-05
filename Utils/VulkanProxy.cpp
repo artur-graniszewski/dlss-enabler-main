@@ -7,7 +7,7 @@
 static bool foundImageViewHandle = false;
 static bool foundBinaryImport = false;
 
-extern VkDevice vkDevice;
+extern VkDevice vkDevice2;
 
 typedef struct VkDummyProps
 {
@@ -105,16 +105,16 @@ VkResult proxy_VkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* info)
 void Vulkan_HookDeviceFunctions()
 {
 
-    if (vkDevice && !originalVkQueuePresentKHR) {
+    if (vkDevice2 && !originalVkQueuePresentKHR) {
         HMODULE vulkanModule = GetModuleHandleW(L"vulkan-1.dll");
         PFN_vkGetDeviceProcAddr pfnVkGetDeviceProcAddr =
             reinterpret_cast<PFN_vkGetDeviceProcAddr>(GetProcAddress(vulkanModule, "vkGetDeviceProcAddr"));
 
 
-        originalVkQueuePresentKHR = reinterpret_cast<PFN_vkQueuePresentKHR>(pfnVkGetDeviceProcAddr(vkDevice, "vkQueuePresentKHR"));
+        originalVkQueuePresentKHR = reinterpret_cast<PFN_vkQueuePresentKHR>(pfnVkGetDeviceProcAddr(vkDevice2, "vkQueuePresentKHR"));
 
-        originalVkWaitSemaphores = reinterpret_cast<PFN_vkWaitSemaphores>(pfnVkGetDeviceProcAddr(vkDevice, "vkWaitSemaphores"));
-        originalVkWaitSemaphoresKHR = reinterpret_cast<PFN_vkWaitSemaphoresKHR>(pfnVkGetDeviceProcAddr(vkDevice, "vkWaitSemaphoresKHR"));
+        originalVkWaitSemaphores = reinterpret_cast<PFN_vkWaitSemaphores>(pfnVkGetDeviceProcAddr(vkDevice2, "vkWaitSemaphores"));
+        originalVkWaitSemaphoresKHR = reinterpret_cast<PFN_vkWaitSemaphoresKHR>(pfnVkGetDeviceProcAddr(vkDevice2, "vkWaitSemaphoresKHR"));
 
 
         if (originalVkQueuePresentKHR) {

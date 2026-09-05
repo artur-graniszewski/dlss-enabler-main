@@ -25,6 +25,11 @@ namespace SwapChainEvents
     using PreResizeBuffersFn = std::function<void(IDXGISwapChain* pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format, UINT Flags)>;
     using PostResizeBuffersFn = std::function<void(IDXGISwapChain* pSwapChain, HRESULT result)>;
 
+    // Destroy event - fired from the wrapper's Release() when its refcount hits 0,
+    // BEFORE the wrapper is deleted. Lets subscribers drop references to this
+    // swapchain's back buffers before anything recreates a swapchain on the same HWND.
+    using PreDestroyFn = std::function<void(IDXGISwapChain* pSwapChain, HWND hwnd)>;
+
     // =========================================================================
     // Registration functions
     // =========================================================================
@@ -35,6 +40,7 @@ namespace SwapChainEvents
     void RegisterPostPresent1(PostPresent1Fn listener);
     void RegisterPreResizeBuffers(PreResizeBuffersFn listener);
     void RegisterPostResizeBuffers(PostResizeBuffersFn listener);
+    void RegisterPreDestroy(PreDestroyFn listener);
 
     // =========================================================================
     // Internal dispatch functions (called by SwapChain wrapper/hooks)
@@ -46,4 +52,5 @@ namespace SwapChainEvents
     void DispatchPostPresent1(IDXGISwapChain1* pSwapChain, UINT SyncInterval, UINT Flags, HRESULT result);
     void DispatchPreResizeBuffers(IDXGISwapChain* pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format, UINT Flags);
     void DispatchPostResizeBuffers(IDXGISwapChain* pSwapChain, HRESULT result);
+    void DispatchPreDestroy(IDXGISwapChain* pSwapChain, HWND hwnd);
 }

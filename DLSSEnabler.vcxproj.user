@@ -3,8 +3,8 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <LocalDebuggerCommandArguments>-vk --dlss-debug=extra -slLog</LocalDebuggerCommandArguments>
-    <LocalDebuggerCommandArgumentsHistory>-vk --dlss-debug=extra -slLog|</LocalDebuggerCommandArgumentsHistory>
+    <LocalDebuggerCommandArguments>-d3d12 --dlss-debug=extra</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArgumentsHistory>-vk --dlss-debug=extra -slLog|-d3d12 --dlss-debug=extra|</LocalDebuggerCommandArgumentsHistory>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Experimental|x64'">
     <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
@@ -46,6 +46,11 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Experimental|Win32'">
     <LocalDebuggerCommandArguments>--dlss-debug=extra -d3d12 -debug -sllog</LocalDebuggerCommandArguments>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LocalDebuggerCommandArguments>-d3d12 --dlss-debug=extra</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
     <LocalDebuggerCommand>C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\streamlinesample.exe</LocalDebuggerCommand>
   </PropertyGroup>

@@ -17,6 +17,7 @@ namespace SwapChainEvents
     static std::vector<PostPresent1Fn> g_PostPresent1Listeners;
     static std::vector<PreResizeBuffersFn> g_PreResizeBuffersListeners;
     static std::vector<PostResizeBuffersFn> g_PostResizeBuffersListeners;
+    static std::vector<PreDestroyFn> g_PreDestroyListeners;
 
     static std::mutex g_Mutex;
 
@@ -58,6 +59,12 @@ namespace SwapChainEvents
     {
         std::lock_guard<std::mutex> lock(g_Mutex);
         g_PostResizeBuffersListeners.push_back(std::move(listener));
+    }
+
+    void RegisterPreDestroy(PreDestroyFn listener)
+    {
+        std::lock_guard<std::mutex> lock(g_Mutex);
+        g_PreDestroyListeners.push_back(std::move(listener));
     }
 
     // =========================================================================
@@ -115,6 +122,15 @@ namespace SwapChainEvents
         for (auto& listener : g_PostResizeBuffersListeners)
         {
             listener(pSwapChain, result);
+        }
+    }
+
+    void DispatchPreDestroy(IDXGISwapChain* pSwapChain, HWND hwnd)
+    {
+        std::lock_guard<std::mutex> lock(g_Mutex);
+        for (auto& listener : g_PreDestroyListeners)
+        {
+            listener(pSwapChain, hwnd);
         }
     }
 }

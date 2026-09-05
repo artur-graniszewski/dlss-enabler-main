@@ -10,6 +10,22 @@
 #include "NgxState.h"         // NgxRuntimeState
 #include "INgxBackend.h"      // INgxLogger (interface)
 #include <vulkan/vulkan_core.h>
+#include "Console.h" 
+
+// Tiny default logger & loader that forward to your current logger and Win32
+class DefaultLogger : public INgxLogger {
+public:
+    void Info(const std::wstring msg) override { Console::Info(msg); }
+    void Warning(const std::wstring msg) override { Console::Warning(msg); }
+    void Error(const std::wstring msg) override { Console::Error(msg); }
+};
+
+class DefaultBackendLoader : public IBackendLoader {
+public:
+    HMODULE Load(const std::wstring& path) override { return ::LoadLibraryW(path.c_str()); }
+    FARPROC Resolve(HMODULE module, const char* name) override { return ::GetProcAddress(module, name); }
+
+};
 
 namespace NGX
 {

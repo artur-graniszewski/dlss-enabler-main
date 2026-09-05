@@ -52,6 +52,9 @@ using BufferType = uint32_t;
 
 constexpr uint32_t kStructVersion1 = 1;
 constexpr uint32_t kStructVersion2 = 2;
+constexpr uint32_t kStructVersion3 = 3;
+constexpr uint32_t kStructVersion4 = 4;
+constexpr uint32_t kStructVersion5 = 5;
 
 enum ResourceLifecycle
 {
@@ -567,6 +570,24 @@ RenderAPI renderAPI = RenderAPI::eD3D12;
 //! IMPORTANT: New members go here or if optional can be chained in a new struct, see sl_struct.h for details
 };
 
+//! Tri-state boolean used by Streamline structs.
+//! IMPORTANT: underlying type MUST be uint32_t (4 bytes) - it defines the
+//! offsets of every DLSSGOptions field added from kStructVersion2 onward.
+enum class Boolean : uint32_t
+{
+	eFalse = 0,
+	eTrue,
+	eInvalid
+};
+
+//! Client/DLSSG queue parallelism level (DLSSGOptions kStructVersion3+).
+enum class DLSSGQueueParallelismMode : uint32_t
+{
+	eBlockPresentingClientQueue,
+	eBlockNoClientQueues,
+	eCount
+};
+
 enum class DLSSGFlags : uint32_t
 {
 	eShowOnlyInterpolatedFrame = 1 << 0,
@@ -584,6 +605,54 @@ enum class DLSSGMode : uint32_t
 	eCount
 };
 
+enum class DLSSGStatus : uint32_t
+{
+	//! Everything is working as expected
+	eOk = 0,
+	//! Output resolution (size of the back buffers in the swap-chain) is too low
+	eFailResolutionTooLow = 1 << 0,
+	//! Reflex is not active while DLSS-G is running, Reflex must be turned on when DLSS-G is on
+	eFailReflexNotDetectedAtRuntime = 1 << 1,
+	//! HDR format not supported, see DLSS-G programming guide for more details
+	eFailHDRFormatNotSupported = 1 << 2,
+	//! Some constants are invalid, see programming guide for more details
+	eFailCommonConstantsInvalid = 1 << 3,
+	//! D3D integrations must use SwapChain::GetCurrentBackBufferIndex API
+	eFailGetCurrentBackBufferIndexNotCalled = 1 << 4,
+	eReserved5 = 1 << 5
+};
+
+
+// {CC8AC8E1-A179-44F5-97FA-E74112F9BC61}
+SL_STRUCT(DLSSGState, StructType({ 0xcc8ac8e1, 0xa179, 0x44f5, { 0x97, 0xfa, 0xe7, 0x41, 0x12, 0xf9, 0xbc, 0x61 } }), kStructVersion3)
+//! Specifies the amount of memory expected to be used
+uint64_t estimatedVRAMUsageInBytes{};
+//! Specifies current status of DLSS-G
+DLSSGStatus status{};
+//! Specifies minimum supported dimension
+uint32_t minWidthOrHeight{};
+//! Number of frames presented since the last 'slDLSSGGetState' call
+uint32_t numFramesActuallyPresented{};
+// kStructVersion2
+//! Maximum number of frames possible to generate on this gpu architecture.
+//!     For 2x only supporting devices, numFramesToGenerateMax is 1.
+//!     For 3x and 4x supporting devices, numFramesToGenerateMax is 3.
+uint32_t numFramesToGenerateMax{};
+Boolean bReserved4{};
+//! Hint to the application to display VSync support in the user interface
+Boolean bIsVsyncSupportAvailable{};
+
+//! SL client must wait on SL DLSS-G plugin-internal fence and associated value, before it can modify or destroy the tagged resources input
+//! to DLSS-G enabled for the corresponding previously presented frame on a non-presenting queue.
+//! If modified on client's presenting queue, then it's recommended but not required.
+//! However, if DLSSGQueueParallelismMode::eBlockNoClientQueues is set, then it's always required.
+//! It must call slDLSSGGetState on the present thread to retrieve the fence value for the inputs consumed by FG, on which client would
+//! wait in the frame it would modify those inputs.
+void* inputsProcessingCompletionFence{};
+uint64_t lastPresentInputsProcessingCompletionFenceValue{};
+//! IMPORTANT: New members go here or if optional can be chained in a new struct, see sl_struct.h for details
+
+};
 
 // {FAC5F1CB-2DFD-4F36-A1E6-3A9E865256C5}
 SL_STRUCT(DLSSGOptions, StructType({ 0xfac5f1cb, 0x2dfd, 0x4f36, { 0xa1, 0xe6, 0x3a, 0x9e, 0x86, 0x52, 0x56, 0xc5 } }), kStructVersion1)
@@ -619,6 +688,18 @@ uint32_t hudLessBufferFormat{};
 uint32_t uiBufferFormat{};
 //! Optional - if specified DLSSG will return any errors which occur when calling underlying API (DXGI or Vulkan)
 void* onErrorCallback{};
+// kStructVersion2
+Boolean bReserved15 = Boolean::eInvalid;
+// kStructVersion3
+//! Optional - level of client/DLSSG queue parallelism (Vulkan only; D3D falls back to eBlockPresentingClientQueue).
+DLSSGQueueParallelismMode queueParallelismMode{};
+// kStructVersion4
+//! Optional - when true DLSSG interpolates 'HUDless'/'UI Color & Alpha' separately from the color backbuffer.
+//! Only read by Streamline when structVersion >= kStructVersion4. Can be overridden by the NVIDIA App.
+Boolean enableUserInterfaceRecomposition = Boolean::eFalse;
+// kStructVersion5 
+//! Optional - target frame rate for dynamic frame generation. 0.0f auto-detects the display refresh rate.
+float dynamicTargetFrameRate{};
 
 //! IMPORTANT: New members go here or if optional can be chained in a new struct, see sl_struct.h for details
 };
@@ -640,9 +721,12 @@ typedef int (*SLSETTAG)(void* arg, const ResourceTag* resources, uint32_t numRes
 //typedef int (*SLSETTAGV1)(const Resource* resource, BufferType tag, uint32_t id, const Extent* extent);
 typedef int (*SLSETTAGV1)(const ResourceV1* resource, BufferType tag, uint32_t id, void* arg4);
 typedef int (*DLSSGSETOPTS)(void* arg, const DLSSGOptions& options);
+typedef int (*DLSSGGETSTATUS)(void* arg, DLSSGState& state, const DLSSGOptions* options);
 typedef int (*DEEPDVCSETOPTS)(void* viewport, const DeepDVCOptions& options);
 int detoured_slInit(Preferences& pref, uint64_t sdkVersion);
 int detoured_slEvaluateFeature(Feature feature, void* arg2, void* arg3, void* arg4, void* arg5);
 int detoured_slGetFeatureFunction(Feature feature, const char* functionName, void*& function);
 int detoured_slSetFeatureLoaded(Feature feature, bool loaded);
 int detoured_slSetTagForCyberpunkFixed(void* arg, const ResourceTag* resources, uint32_t numResources, void* arg4);
+// StreamlineProxy.h
+void* GetCurrentViewPort();

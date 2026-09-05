@@ -153,7 +153,7 @@ std::wstring Validator::GetDiagnosticsReport()
 }
 
 
-int Validator::CheckNvapi64Presence() 
+int Validator::CheckNvapi64Presence()
 {
 	// Get the System32 directory path
 	wchar_t system32Path[MAX_PATH];
@@ -180,7 +180,7 @@ int Validator::CheckNvapi64Presence()
 	return 0;
 }
 
-int Validator::CheckRegistryValueAndFile(const LPCSTR keyPath, const LPCSTR valueName, const LPCSTR appendedFileName) 
+int Validator::CheckRegistryValueAndFile(const LPCSTR keyPath, const LPCSTR valueName, const LPCSTR appendedFileName)
 {
 	HKEY hKey;
 	LONG result = RegOpenKeyExA(HKEY_LOCAL_MACHINE, keyPath, 0, KEY_READ, &hKey);
@@ -244,12 +244,12 @@ int Validator::AreDLSStoFSR3FilesPresent()
 
 	// Check if file1 exists
 	//if (!Common::IsPluginPresent(file1)) {
-		if (!Common::IsPluginPresent(file3)) {
-			fsr3FilesStatus = -1;
-		}
-		else {
-			fsr3FilesStatus = 1;
-		}
+	if (!Common::IsPluginPresent(file3)) {
+		fsr3FilesStatus = -1;
+	}
+	else {
+		fsr3FilesStatus = 1;
+	}
 	//}
 
 	// Check if file2 exists
@@ -334,55 +334,147 @@ int Validator::GetNVIDIASignatureSetting()
 
 int Validator::Is_NVNGXDLLPresent()
 {
-	LPCSTR keyPath = "SYSTEM\\CurrentControlSet\\Services\\nvlddmkm\\NGXCore";
-	LPCSTR valueName = "NGXPath";
 	LPCSTR appendedFileName = "_nvngx.dll";
 
-	int result = CheckRegistryValueAndFile(keyPath, valueName, appendedFileName);
+	// Fake driver - treat registry entries as absent
+	int result = -2;
+
+	if (!IsFakeNvidiaDriverDetected()) {
+		// Primary key
+		LPCSTR keyPath = "SYSTEM\\CurrentControlSet\\Services\\nvlddmkm\\NGXCore";
+		LPCSTR valueName = "NGXPath";
+		// Fallback key
+		LPCSTR keyPathFallback = "SOFTWARE\\NVIDIA Corporation\\Global\\NGXCore";
+		LPCSTR valueNameFallback = "FullPath";
+
+		result = CheckRegistryValueAndFile(keyPath, valueName, appendedFileName);
+		if (result < 1) {
+			result = CheckRegistryValueAndFile(keyPathFallback, valueNameFallback, appendedFileName);
+		}
+	}
 
 	if (result < 1) {
 		// Check in the directory where the process is running
 		char processPath[MAX_PATH];
 		if (GetModuleFileNameA(nullptr, processPath, MAX_PATH) != 0) {
-			// Extract the directory from the process path
 			PathRemoveFileSpecA(processPath);
-
 			PathAppendA(processPath, appendedFileName);
-
 			if (PathFileExistsA(processPath)) {
 				return 2; // Found in the process directory
 			}
 		}
 	}
-
 	return result;
 }
 
 int Validator::IsNVNGXDLLPresent(bool includeLocalPath)
 {
-	//LPCSTR keyPath = "SOFTWARE\\NVIDIA Corporation\\Global\\NGXCore";
-	LPCSTR keyPath = "SYSTEM\\CurrentControlSet\\Services\\nvlddmkm\\NGXCore";
-	//LPCSTR valueName = "FullPath";
-	LPCSTR valueName = "NGXPath";
 	LPCSTR appendedFileName = "nvngx.dll";
 
-	int result = CheckRegistryValueAndFile(keyPath, valueName, appendedFileName);
+	// Fake driver - treat registry entries as absent
+	int result = -2;
+
+	if (!IsFakeNvidiaDriverDetected()) {
+		// Primary key
+		LPCSTR keyPath = "SYSTEM\\CurrentControlSet\\Services\\nvlddmkm\\NGXCore";
+		LPCSTR valueName = "NGXPath";
+		// Fallback key
+		LPCSTR keyPathFallback = "SOFTWARE\\NVIDIA Corporation\\Global\\NGXCore";
+		LPCSTR valueNameFallback = "FullPath";
+
+		result = CheckRegistryValueAndFile(keyPath, valueName, appendedFileName);
+		if (result < 1) {
+			result = CheckRegistryValueAndFile(keyPathFallback, valueNameFallback, appendedFileName);
+		}
+	}
 
 	if (result < 1 || includeLocalPath) {
 		// Check in the directory where the process is running
 		char processPath[MAX_PATH];
 		if (GetModuleFileNameA(nullptr, processPath, MAX_PATH) != 0) {
 			PathRemoveFileSpecA(processPath);
-
 			PathAppendA(processPath, appendedFileName);
-
 			if (PathFileExistsA(processPath)) {
 				return 2; // Found in the process directory
 			}
 		}
 	}
-
 	return result;
+}
+
+std::string Validator::GetNgxRegistryPath()
+{
+	HKEY hKey;
+	CHAR pathBuf[MAX_PATH];
+	DWORD dataSize = sizeof(pathBuf);
+
+	// Primary key
+	if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+		"SYSTEM\\CurrentControlSet\\Services\\nvlddmkm\\NGXCore",
+		0, KEY_READ, &hKey) == ERROR_SUCCESS)
+	{
+		if (RegQueryValueExA(hKey, "NGXPath", nullptr, nullptr,
+			reinterpret_cast<LPBYTE>(pathBuf), &dataSize) == ERROR_SUCCESS)
+		{
+			RegCloseKey(hKey);
+			return std::string(pathBuf);
+		}
+		RegCloseKey(hKey);
+	}
+
+	// Fallback key
+	dataSize = sizeof(pathBuf);
+	if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+		"SOFTWARE\\NVIDIA Corporation\\Global\\NGXCore",
+		0, KEY_READ, &hKey) == ERROR_SUCCESS)
+	{
+		if (RegQueryValueExA(hKey, "FullPath", nullptr, nullptr,
+			reinterpret_cast<LPBYTE>(pathBuf), &dataSize) == ERROR_SUCCESS)
+		{
+			RegCloseKey(hKey);
+			return std::string(pathBuf);
+		}
+		RegCloseKey(hKey);
+	}
+
+	return "";
+}
+
+bool Validator::IsFakeNvidiaDriverDetected()
+{
+	static int cachedResult = -1;
+	if (cachedResult >= 0) return cachedResult == 1;
+
+	cachedResult = 0;
+
+	std::string ngxDir = GetNgxRegistryPath();
+	if (ngxDir.empty()) {
+		return false;
+	}
+
+	// Build path to nvapi64.dll in the NGX directory
+	std::string nvapiPath = ngxDir;
+	if (nvapiPath.back() != '\\') nvapiPath += '\\';
+	nvapiPath += "nvapi64.dll";
+
+	if (!PathFileExistsA(nvapiPath.c_str())) {
+		return false; // nvapi64.dll not present - nothing to check
+	}
+
+	// File exists - verify it has a genuine version string
+	std::wstring nvapiPathW = ToWideString(nvapiPath);
+	std::wstring version = Common::GetFileVersion(nvapiPathW.c_str());
+	if (!version.empty()) {
+		LOG_DEBUG(L"[VALIDATOR] nvapi64.dll in NGX path has version: " + version);
+		return false; // Genuine driver
+	}
+
+	// No version resource - fake driver
+	LOG_WARNING(L"[VALIDATOR] Fake NVIDIA driver detected: nvapi64.dll at \"" + nvapiPathW +
+		L"\" has no version information");
+
+	cachedResult = 1;
+	return true;
 }
 
 std::wstring Validator::DescribeNVIDIASignatureSetting(int setting, bool isDebugOn)
@@ -447,7 +539,7 @@ extern "C" __declspec(dllexport) void InitializeASI()
 	std::filesystem::path dir = std::filesystem::path(moduleFileName).parent_path();
 
 	// List of required DLLs
-	std::vector<std::wstring> requiredDlls = { L"version.dll", L"winhttp.dll", L"winmm.dll", L"d3d12.dll"};
+	std::vector<std::wstring> requiredDlls = { L"version.dll", L"winhttp.dll", L"winmm.dll", L"d3d12.dll" };
 
 	// ProductName to search for
 	std::wstring targetProductName = L"Ultimate-ASI-Loader-x64";
@@ -468,9 +560,9 @@ extern "C" __declspec(dllexport) void InitializeASI()
 				// Check if the current file is one of the required DLLs
 				if (std::find(requiredDlls.begin(), requiredDlls.end(), filename) != requiredDlls.end()) {
 					//if (CheckResource(dir / filename, targetProductName)) {
-						LOG_INFO(L"[LOADER] ASI Loader detected: " + std::wstring(filename));
-						loaderFound = true;
-						break;
+					LOG_INFO(L"[LOADER] ASI Loader detected: " + std::wstring(filename));
+					loaderFound = true;
+					break;
 					//}
 				}
 				// Check if the DLL contains the desired resource

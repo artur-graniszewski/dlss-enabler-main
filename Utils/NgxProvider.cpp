@@ -45,7 +45,6 @@ namespace NGX
 			}
 		}
 
-		ctx.ngx.isDlssgSupportedByHardware = true;
 		RequirementInfo->MinHWArchitecture = 10;
 		strcpy_s(RequirementInfo->MinOSVersion, "10.0.0.0");
 	}

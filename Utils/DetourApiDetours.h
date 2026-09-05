@@ -10,4 +10,5 @@ struct DetourApiDetours : IDetourApi {
     FARPROC FindFunction(const char* m, const char* n) override;
     HMODULE GetModHandleW(const wchar_t* n) override;
     FARPROC GetProc(HMODULE h, const char* n) override;
+    bool Detach(AttachRequest req) override;
 };

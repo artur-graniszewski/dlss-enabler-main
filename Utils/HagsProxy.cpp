@@ -86,7 +86,7 @@ NTSTATUS WINAPI MyD3DKMTEnumAdapters2(D3DKMT_ENUMADAPTERS2* pAdapterInfo)
 	pFactory->Release();
 	LOG_DEBUG(L"[HAGS] D3DKMTEnumAdapters2: successfull");
 	ctx.streamline.isPresent = true;
-	ctx.streamline.spoofNextCreateFactoryCall = true;
+	ctx.streamline.isSelectiveSpoofingEnabled = true;
 
 	return 0x00000000; // STATUS_SUCCESS
 }

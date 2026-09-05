@@ -1,11 +1,20 @@
 // =============================================================================
-// UxHook.cpp - D3D11/D3D12 DXGI Hook with UxImGui Overlay (v11 - DRY Refactor)
+// UxHook.cpp - D3D11/D3D12 DXGI Hook with UxImGui Overlay (v12 - Dynamic WndProc)
+// =============================================================================
+// Changes from v11:
+// - WndProc hook is now DYNAMIC: hooked only when our menu is open, unhooked when closed
+// - This prevents infinite recursion with OptiScaler's WndProc hook
+// - Added inHookedWndProc guard as additional safety against recursion
 // =============================================================================
 
 #include "UxHook.h"
 #include "SettingsMenu.h"
 #include "MenuAnimations.h"
 #include "Common.h"
+#include "LatencyProbe.h"
+#include "../Core/Context.h"
+#include "SwapchainColorState.h"
+#include "UxCompose.h"
 
 // UxImGui - Our isolated UxImGui with UxImGui:: namespace
 // These are modified copies with GUxImGui->GUxImGui and UxImGui::->UxImGui::
@@ -18,6 +27,7 @@
 #include <mutex>
 #include <atomic>
 #include <sstream>
+#include <vector>
 
 // Forward declaration for WndProc hook
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -70,7 +80,7 @@ namespace CursorHook
     static RECT _cursorLimit = {};
     static POINT _lastPoint = {};
     static HCURSOR _savedCursor = nullptr;
-    static bool _restoreCursorPending = false;  // Flag to restore cursor on next WM_SETCURSOR
+    static bool _restoreCursorPending = false;
     static bool g_HooksInstalled = false;
 
     // =========================================================================
@@ -79,7 +89,6 @@ namespace CursorHook
 
     static LRESULT WINAPI hkSendMessageW(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
     {
-        // Block WM_SETCURSOR (0x0020) when menu is open
         if (UxHook_IsMenuOpen() && Msg == 0x0020)
             return TRUE;
         return pfn_SendMessageW(hWnd, Msg, wParam, lParam);
@@ -103,12 +112,10 @@ namespace CursorHook
         return pfn_SetPhysicalCursorPos ? pfn_GetCursorPos(lpPoint) : FALSE;
     }
 
-    // Hook GetCursorPos - this is what most games use for camera control
     static BOOL WINAPI hkGetCursorPos(LPPOINT lpPoint)
     {
         if (UxHook_IsMenuOpen())
         {
-            // Return frozen position to prevent camera movement in games
             lpPoint->x = _lastPoint.x;
             lpPoint->y = _lastPoint.y;
             return TRUE;
@@ -116,7 +123,6 @@ namespace CursorHook
         return pfn_GetCursorPos(lpPoint);
     }
 
-    // Get REAL cursor position (bypassing our hook) - for ImGui to use
     static BOOL GetRealCursorPos(LPPOINT lpPoint)
     {
         if (pfn_GetCursorPos)
@@ -152,22 +158,17 @@ namespace CursorHook
         return pfn_SendInput(cInputs, pInputs, cbSize);
     }
 
-    // Hook GetRawInputData - block mouse raw input when menu is open
     static UINT WINAPI hkGetRawInputData(HRAWINPUT hRawInput, UINT uiCommand, LPVOID pData, PUINT pcbSize, UINT cbSizeHeader)
     {
-        // Always call original to get real data first
         UINT result = pfn_GetRawInputData(hRawInput, uiCommand, pData, pcbSize, cbSizeHeader);
 
-        // If menu is open and we got valid mouse data, zero out the mouse movement
         if (UxHook_IsMenuOpen() && pData != nullptr && result != (UINT)-1)
         {
             RAWINPUT* raw = (RAWINPUT*)pData;
             if (raw->header.dwType == RIM_TYPEMOUSE)
             {
-                // Zero out mouse movement to prevent camera rotation
                 raw->data.mouse.lLastX = 0;
                 raw->data.mouse.lLastY = 0;
-                // Also block button state changes
                 raw->data.mouse.usButtonFlags = 0;
                 raw->data.mouse.usButtonData = 0;
             }
@@ -176,16 +177,13 @@ namespace CursorHook
         return result;
     }
 
-    // Hook SetCursor - games use SetCursor(NULL) to hide cursor
     static HCURSOR WINAPI hkSetCursor(HCURSOR hCursor)
     {
         if (UxHook_IsMenuOpen())
         {
-            // When menu is open, change cursor to cross (for testing)
             pfn_SetCursor(NULL);
             return NULL;
         }
-
         return pfn_SetCursor(hCursor);
     }
 
@@ -197,7 +195,6 @@ namespace CursorHook
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
 
-        // Get function pointers using DetourFindFunction (like OptiScaler)
         pfn_SetPhysicalCursorPos = reinterpret_cast<PFN_SetCursorPos>(
             DetourFindFunction("user32.dll", "SetPhysicalCursorPos"));
         pfn_SetCursorPos = reinterpret_cast<PFN_SetCursorPos>(
@@ -217,14 +214,12 @@ namespace CursorHook
         pfn_GetRawInputData = reinterpret_cast<PFN_GetRawInputData>(
             DetourFindFunction("user32.dll", "GetRawInputData"));
 
-        // Attach hooks (exactly like OptiScaler)
         if (pfn_SetPhysicalCursorPos && (pfn_SetPhysicalCursorPos != pfn_SetCursorPos))
             pfn_SetPhysicalCursorPos_hooked = (DetourAttach(&(PVOID&)pfn_SetPhysicalCursorPos, hkSetPhysicalCursorPos) == 0);
 
         if (pfn_SetCursorPos)
             pfn_SetCursorPos_hooked = (DetourAttach(&(PVOID&)pfn_SetCursorPos, hkSetCursorPos) == 0);
 
-        // CRITICAL: Hook GetCursorPos - games use this for camera/mouse delta
         if (pfn_GetCursorPos)
             pfn_GetCursorPos_hooked = (DetourAttach(&(PVOID&)pfn_GetCursorPos, hkGetCursorPos) == 0);
 
@@ -243,14 +238,12 @@ namespace CursorHook
         if (pfn_SetCursor)
             pfn_SetCursor_hooked = (DetourAttach(&(PVOID&)pfn_SetCursor, hkSetCursor) == 0);
 
-        // CRITICAL: Hook GetRawInputData - games like Witcher 3 use raw input for camera
         if (pfn_GetRawInputData)
             pfn_GetRawInputData_hooked = (DetourAttach(&(PVOID&)pfn_GetRawInputData, hkGetRawInputData) == 0);
 
         DetourTransactionCommit();
 
         LOG_TRACE(L"[UxHook] CursorHook: Detours attached");
-        LOG_TRACE(L"[UxHook] CursorHook: Check hooks installed");
     }
 
     // =========================================================================
@@ -332,14 +325,12 @@ namespace CursorHook
         g_HooksInstalled = false;
     }
 
-    // Called when menu opens (like OptiScaler)
     static void OnMenuOpen()
     {
-        // Save current cursor clip rect
         if (pfn_ClipCursor_hooked)
         {
             GetClipCursor(&_cursorLimit);
-            pfn_ClipCursor(nullptr);  // Call original to release
+            pfn_ClipCursor(nullptr);
         }
         else
         {
@@ -347,19 +338,14 @@ namespace CursorHook
             ClipCursor(nullptr);
         }
 
-        // Save cursor position
         GetCursorPos(&_lastPoint);
-
-        // Force cursor visible
         while (ShowCursor(TRUE) < 0) {}
 
         LOG_DEBUG(L"[UxHook] CursorHook: Menu opened, cursor released");
     }
 
-    // Called when menu closes (like OptiScaler)
     static void OnMenuClose()
     {
-        // Restore cursor clip
         if (_cursorLimit.right > _cursorLimit.left && _cursorLimit.bottom > _cursorLimit.top)
         {
             if (pfn_ClipCursor_hooked)
@@ -368,23 +354,18 @@ namespace CursorHook
                 ClipCursor(&_cursorLimit);
         }
 
-        // Clear pending flag - we don't need it anymore
         _restoreCursorPending = false;
         _savedCursor = nullptr;
 
-        // Undo ShowCursor(TRUE) - just one call
         ShowCursor(FALSE);
 
         LOG_DEBUG(L"[UxHook] CursorHook: Menu closed, cursor restored");
     }
 
-    // Call this AFTER menu state is set to closed, to trigger game's cursor restore
     static void SendSetCursorToGame(HWND hwnd)
     {
         if (hwnd)
         {
-            // Send WM_SETCURSOR to game window - this forces game to set its cursor
-            // HTCLIENT = cursor is in client area, WM_MOUSEMOVE = triggered by mouse move
             PostMessage(hwnd, WM_SETCURSOR, (WPARAM)hwnd, MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
             LOG_TRACE(L"[UxHook] CursorHook: Sent WM_SETCURSOR to game window");
         }
@@ -406,10 +387,8 @@ namespace
     constexpr ULONGLONG POPUP_DELAY_MS = 3000;
     constexpr ULONGLONG POPUP_DURATION_MS = 10000;
 
-    // Menu toggle key - backtick (`)
-    constexpr int MENU_TOGGLE_KEY = VK_OEM_3;
+#define MENU_TOGGLE_KEY (SettingsMenu::GetMenuToggleKey())
 
-    // D3D12 specific
     static constexpr UINT NUM_BACK_BUFFERS = 3;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> g_CommandAllocators[NUM_BACK_BUFFERS];
     UINT64 g_FrameCount = 0;
@@ -418,12 +397,325 @@ namespace
     std::atomic<bool> g_OverlayDisabled{ false };
     IDXGISwapChain* g_InitializedSwapChain = nullptr;
 
-    // Force specific API (set before first RenderOverlay call)
     UxHook::GraphicsAPI g_ForceAPI = UxHook::GraphicsAPI::Unknown;
 }
 
 // =============================================================================
-// D3D12 Descriptor Heap Allocator (instance and callbacks)
+// Colour space resolution (DIAGNOSTIC ONLY - does not affect rendering yet)
+// =============================================================================
+//
+// Three independent sources, each answering a different question:
+//   back buffer FORMAT      -> what the game writes into        (GetDesc1)
+//   SetColorSpace1 snapshot -> which transfer function it means (private data)
+//   containing OUTPUT       -> how bright the display can go    (IDXGIOutput6)
+//
+// The display's own colour space is deliberately NOT used to decide the mode.
+// A display in HDR mode says G2084 regardless of whether the game presents
+// HDR10, scRGB, or plain SDR that DWM tone maps (incl. Auto HDR) - three cases
+// needing three different overlay treatments.
+// =============================================================================
+
+namespace
+{
+    enum class OverlayColorMode
+    {
+        Sdr,        // 8-bit or 10-bit sRGB - overlay colours already correct
+        ScRgb,      // FP16 linear, 1.0 == 80 nits
+        Hdr10       // R10G10B10A2 PQ / Rec.2020
+    };
+
+    struct ResolvedColorState
+    {
+        DXGI_FORMAT             Format = DXGI_FORMAT_UNKNOWN;
+        DXGI_COLOR_SPACE_TYPE   ColorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+        bool                    ColorSpaceKnown = false;
+
+        bool                    MetaKnown = false;
+        float                   MaxMasteringNits = 0.0f;
+
+        bool                    DisplayInfoValid = false;
+        DXGI_COLOR_SPACE_TYPE   DisplayColorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+        float                   DisplayMinNits = 0.0f;
+        float                   DisplayMaxNits = 0.0f;
+        float                   DisplayMaxFullFrameNits = 0.0f;
+
+        // Windows "SDR content brightness" for this monitor. This is the value
+        // the user has already tuned so that every other SDR overlay in the
+        // system looks right - so it is the correct automatic paper white, and
+        // it is NOT derivable from DXGI_OUTPUT_DESC1.
+        float                   DisplaySdrWhiteNits = 0.0f;
+
+        // What the overlay's 1.0 white will actually be mapped to.
+        float                   PaperWhiteNits = 0.0f;
+
+        OverlayColorMode        Mode = OverlayColorMode::Sdr;
+    };
+
+    // Fallback when the OS value is unavailable. 200 nits is the Windows
+    // default for SDR content in HDR mode.
+    constexpr float kDefaultPaperWhiteNits = 200.0f;
+
+    ResolvedColorState g_ColorState;
+    bool     g_ColorStateValid = false;
+    uint32_t g_ColorStateRevision = 0;
+
+    const wchar_t* FormatName(DXGI_FORMAT f)
+    {
+        switch (f)
+        {
+        case DXGI_FORMAT_R8G8B8A8_UNORM:        return L"R8G8B8A8_UNORM";
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:   return L"R8G8B8A8_UNORM_SRGB";
+        case DXGI_FORMAT_B8G8R8A8_UNORM:        return L"B8G8R8A8_UNORM";
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:   return L"B8G8R8A8_UNORM_SRGB";
+        case DXGI_FORMAT_R10G10B10A2_UNORM:     return L"R10G10B10A2_UNORM";
+        case DXGI_FORMAT_R16G16B16A16_FLOAT:    return L"R16G16B16A16_FLOAT";
+        default:                                return L"other";
+        }
+    }
+
+    const wchar_t* ColorSpaceName(DXGI_COLOR_SPACE_TYPE cs)
+    {
+        switch (cs)
+        {
+        case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:   return L"G22_P709 (sRGB)";
+        case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:   return L"G10_P709 (scRGB)";
+        case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:return L"G2084_P2020 (HDR10)";
+        case DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020: return L"G2084_P2020 studio";
+        default:                                        return L"other";
+        }
+    }
+
+    const wchar_t* ModeName(OverlayColorMode m)
+    {
+        switch (m)
+        {
+        case OverlayColorMode::ScRgb:   return L"scRGB";
+        case OverlayColorMode::Hdr10:   return L"HDR10";
+        default:                        return L"SDR";
+        }
+    }
+
+    // Windows per-monitor "SDR content brightness" slider, in nits.
+    // Returns 0 when unavailable (older OS, remote session, Proton/vkd3d).
+    //
+    // The DXGI output gives us an HMONITOR; the display-config API is keyed by
+    // adapter/target id. The bridge is the GDI device name
+    // (\\.\DISPLAY1), which both sides can produce.
+    float QuerySdrWhiteLevelNits(HMONITOR hMonitor)
+    {
+        if (hMonitor == nullptr)
+            return 0.0f;
+
+        MONITORINFOEXW mi = {};
+        mi.cbSize = sizeof(mi);
+        if (!GetMonitorInfoW(hMonitor, &mi))
+            return 0.0f;
+
+        UINT32 pathCount = 0;
+        UINT32 modeCount = 0;
+        if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount, &modeCount) != ERROR_SUCCESS)
+            return 0.0f;
+
+        std::vector<DISPLAYCONFIG_PATH_INFO> paths(pathCount);
+        std::vector<DISPLAYCONFIG_MODE_INFO> modes(modeCount);
+
+        if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(),
+            &modeCount, modes.data(), nullptr) != ERROR_SUCCESS)
+        {
+            return 0.0f;
+        }
+
+        paths.resize(pathCount);
+
+        for (const auto& path : paths)
+        {
+            DISPLAYCONFIG_SOURCE_DEVICE_NAME source = {};
+            source.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+            source.header.size = sizeof(source);
+            source.header.adapterId = path.sourceInfo.adapterId;
+            source.header.id = path.sourceInfo.id;
+
+            if (DisplayConfigGetDeviceInfo(&source.header) != ERROR_SUCCESS)
+                continue;
+
+            if (wcscmp(source.viewGdiDeviceName, mi.szDevice) != 0)
+                continue;
+
+            DISPLAYCONFIG_SDR_WHITE_LEVEL white = {};
+            white.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+            white.header.size = sizeof(white);
+            white.header.adapterId = path.targetInfo.adapterId;
+            white.header.id = path.targetInfo.id;
+
+            if (DisplayConfigGetDeviceInfo(&white.header) != ERROR_SUCCESS)
+                return 0.0f;
+
+            // SDRWhiteLevel is in units of 1/1000 of the scRGB reference, and
+            // scRGB 1.0 == 80 nits.
+            return static_cast<float>(white.SDRWhiteLevel) / 1000.0f * 80.0f;
+        }
+
+        return 0.0f;
+    }
+
+    // Luminance range of the output the swapchain's window actually sits on.
+    // GetContainingOutput is used rather than walking adapters by LUID: with two
+    // monitors of different capability, "first HDR-capable output on the adapter"
+    // is not necessarily the one the game window is on.
+    void QueryDisplayInfo(IDXGISwapChain* pSwapChain, ResolvedColorState& out)
+    {
+        if (!pSwapChain)
+            return;
+
+        Microsoft::WRL::ComPtr<IDXGIOutput> output;
+        if (FAILED(pSwapChain->GetContainingOutput(&output)) || !output)
+            return;
+
+        Microsoft::WRL::ComPtr<IDXGIOutput6> output6;
+        if (FAILED(output.As(&output6)) || !output6)
+            return;
+
+        DXGI_OUTPUT_DESC1 desc = {};
+        if (FAILED(output6->GetDesc1(&desc)))
+            return;
+
+        out.DisplayInfoValid = true;
+        out.DisplayColorSpace = desc.ColorSpace;
+        out.DisplayMinNits = desc.MinLuminance;
+        out.DisplayMaxNits = desc.MaxLuminance;
+        out.DisplayMaxFullFrameNits = desc.MaxFullFrameLuminance;
+        out.DisplaySdrWhiteNits = QuerySdrWhiteLevelNits(desc.Monitor);
+    }
+
+    OverlayColorMode DecideMode(const ResolvedColorState& s)
+    {
+        // FP16 back buffers are treated as scRGB by the compositor even when the
+        // game never calls SetColorSpace1, so the format alone is decisive here.
+        if (s.Format == DXGI_FORMAT_R16G16B16A16_FLOAT)
+            return OverlayColorMode::ScRgb;
+
+        // 10-bit UNORM is ALSO the ordinary SDR wide-gamut format. Only an
+        // observed SetColorSpace1(G2084) proves PQ. Guessing from the format
+        // would break every SDR 10-bit title.
+        if (s.Format == DXGI_FORMAT_R10G10B10A2_UNORM &&
+            s.ColorSpaceKnown &&
+            (s.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 ||
+                s.ColorSpace == DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020))
+        {
+            return OverlayColorMode::Hdr10;
+        }
+
+        return OverlayColorMode::Sdr;
+    }
+
+    void ResolveColorState(IDXGISwapChain* pSwapChain)
+    {
+        ResolvedColorState state;
+
+        if (!pSwapChain)
+            return;
+
+        Microsoft::WRL::ComPtr<IDXGISwapChain1> sc1;
+        if (SUCCEEDED(pSwapChain->QueryInterface(IID_PPV_ARGS(&sc1))) && sc1)
+        {
+            DXGI_SWAP_CHAIN_DESC1 desc1 = {};
+            if (SUCCEEDED(sc1->GetDesc1(&desc1)))
+                state.Format = desc1.Format;
+        }
+
+        if (state.Format == DXGI_FORMAT_UNKNOWN)
+        {
+            DXGI_SWAP_CHAIN_DESC desc = {};
+            if (SUCCEEDED(pSwapChain->GetDesc(&desc)))
+                state.Format = desc.BufferDesc.Format;
+        }
+
+        SwapchainColorState::Blob blob = {};
+        if (SwapchainColorState::Load(pSwapChain, &blob))
+        {
+            if (blob.flags & SwapchainColorState::FLAG_COLOR_SPACE_SET)
+            {
+                state.ColorSpaceKnown = true;
+                state.ColorSpace = static_cast<DXGI_COLOR_SPACE_TYPE>(blob.colorSpace);
+            }
+
+            if (blob.flags & SwapchainColorState::FLAG_META_SET)
+            {
+                state.MetaKnown = true;
+                // DXGI_HDR_METADATA_HDR10 luminance is in units of 1 nit for
+                // MaxMasteringLuminance (min is in 0.0001 nit units).
+                state.MaxMasteringNits = static_cast<float>(blob.meta.MaxMasteringLuminance);
+            }
+        }
+
+        QueryDisplayInfo(pSwapChain, state);
+
+        state.Mode = DecideMode(state);
+
+        // Paper white is a content convention, not a display property - it
+        // cannot be derived from the luminance range. Mapping 1.0 to
+        // MaxLuminance would simply reproduce the blown-out overlay with a
+        // nicer formula. The OS SDR white level is the one automatic source
+        // that answers the right question.
+        if (state.Mode != OverlayColorMode::Sdr)
+        {
+            state.PaperWhiteNits = (state.DisplaySdrWhiteNits > 0.0f)
+                ? state.DisplaySdrWhiteNits
+                : kDefaultPaperWhiteNits;
+
+            // Safety clamp only. Since the source is SDR, output never exceeds
+            // paper white, so no tone mapping is required.
+            if (state.DisplayMaxNits > 0.0f && state.PaperWhiteNits > state.DisplayMaxNits)
+                state.PaperWhiteNits = state.DisplayMaxNits;
+        }
+
+        g_ColorState = state;
+        g_ColorStateValid = true;
+        g_ColorStateRevision = SwapchainColorState::Revision().load(std::memory_order_acquire);
+
+        std::wstringstream ss;
+        ss << L"[UxHook][HDR] swapchain=" << (void*)pSwapChain
+            << L" format=" << FormatName(state.Format)
+            << L" colorSpace=" << (state.ColorSpaceKnown ? ColorSpaceName(state.ColorSpace) : L"NOT SET")
+            << L" -> mode=" << ModeName(state.Mode);
+        LOG_INFO(ss.str());
+
+        std::wstringstream ss2;
+        ss2 << L"[UxHook][HDR] display: ";
+        if (state.DisplayInfoValid)
+        {
+            ss2 << ColorSpaceName(state.DisplayColorSpace)
+                << L" minNits=" << state.DisplayMinNits
+                << L" maxNits=" << state.DisplayMaxNits
+                << L" maxFullFrameNits=" << state.DisplayMaxFullFrameNits
+                << L" sdrWhiteNits=" << state.DisplaySdrWhiteNits;
+        }
+        else
+        {
+            ss2 << L"unavailable";
+        }
+        ss2 << L" | mastering=" << (state.MetaKnown ? state.MaxMasteringNits : 0.0f)
+            << L" | paperWhite=" << state.PaperWhiteNits;
+        LOG_INFO(ss2.str());
+    }
+
+    // SetColorSpace1 frequently arrives AFTER the overlay has initialised, so a
+    // one-shot resolve at init would permanently record "NOT SET". The writer
+    // bumps a revision counter; this is a relaxed atomic load per frame.
+    void RefreshColorStateIfStale(IDXGISwapChain* pSwapChain)
+    {
+        const uint32_t rev = SwapchainColorState::Revision().load(std::memory_order_acquire);
+
+        if (g_ColorStateValid && rev == g_ColorStateRevision)
+            return;
+
+        LOG_INFO(L"[UxHook][HDR] colour state changed or unresolved - re-resolving");
+        ResolveColorState(pSwapChain);
+    }
+}
+
+// =============================================================================
+// D3D12 Descriptor Heap Allocator
 // =============================================================================
 
 static DescriptorHeapAllocator g_SrvDescriptorAllocator;
@@ -439,25 +731,23 @@ static void SrvDescriptorFreeCallback(UxImGui_ImplDX12_InitInfo*, D3D12_CPU_DESC
 }
 
 // =============================================================================
-// Shared Helper Functions (DRY - used by both D3D11 and D3D12)
+// Shared Helper Functions
 // =============================================================================
+
+// External: force Streamline to apply current mfgEnforcedMode (defined in StreamlineProxy.cpp)
+extern void StreamlineProxy_ForceApplyMfgMode();
 
 namespace
 {
-    // =========================================================================
-    // Shared: Update ImGui IO (display size, delta time, mouse state)
-    // =========================================================================
     void UpdateImGuiIO(HWND targetWindow, bool menuOpen, LARGE_INTEGER& lastTime, LARGE_INTEGER& freq)
     {
         UxImGuiIO& io = UxImGui::GetIO();
 
-        // Set display size
         RECT rect = { 0, 0, 0, 0 };
         if (targetWindow)
             GetClientRect(targetWindow, &rect);
         io.DisplaySize = UxImVec2((float)(rect.right - rect.left), (float)(rect.bottom - rect.top));
 
-        // Set delta time
         if (freq.QuadPart == 0)
             QueryPerformanceFrequency(&freq);
 
@@ -474,7 +764,6 @@ namespace
 
         lastTime = currentTime;
 
-        // Set mouse state
         if (menuOpen)
         {
             io.MouseDrawCursor = true;
@@ -493,20 +782,62 @@ namespace
             io.MouseDown[1] = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
             io.MouseDown[2] = (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
         }
-        else  
+        else
         {
-            io.MouseDrawCursor = false; 
+            io.MouseDrawCursor = false;
             io.MousePos = UxImVec2(-FLT_MAX, -FLT_MAX);
             io.MouseDown[0] = io.MouseDown[1] = io.MouseDown[2] = false;
         }
     }
 
     // =========================================================================
-    // Shared: Handle menu toggle key and cursor control with animations
+    // Dynamic WndProc hook/unhook helpers
+    // =========================================================================
+    void HookWndProc(HWND targetWindow)
+    {
+        if (!targetWindow || g_State.OriginalWndProc)
+            return;  // Already hooked or no window
+
+        WNDPROC current = (WNDPROC)GetWindowLongPtrW(targetWindow, GWLP_WNDPROC);
+        if (current != HookedWndProc)
+        {
+            g_State.OriginalWndProc = (WNDPROC)SetWindowLongPtrW(
+                targetWindow, GWLP_WNDPROC, (LONG_PTR)HookedWndProc);
+            LOG_INFO(L"[UxHook] WndProc hooked (menu opening)");
+        }
+    }
+
+    void UnhookWndProc()
+    {
+        if (!g_State.OriginalWndProc || !g_State.TargetWindow)
+            return;  // Not hooked
+
+        // Verify we're still the current WndProc before restoring
+        // If someone else hooked after us, don't restore (would break their chain)
+        WNDPROC current = (WNDPROC)GetWindowLongPtrW(g_State.TargetWindow, GWLP_WNDPROC);
+        if (current == HookedWndProc)
+        {
+            SetWindowLongPtrW(g_State.TargetWindow, GWLP_WNDPROC, (LONG_PTR)g_State.OriginalWndProc);
+            LOG_INFO(L"[UxHook] WndProc unhooked (menu closed)");
+        }
+        else
+        {
+            LOG_WARNING(L"[UxHook] WndProc was re-hooked by another module, skipping restore");
+        }
+
+        g_State.OriginalWndProc = nullptr;
+    }
+
+    // =========================================================================
+    // Handle menu toggle key and cursor control with animations
     // =========================================================================
     void HandleMenuToggle(bool& showMenu, bool& keyWasPressed, HWND targetWindow)
     {
-        bool keyIsPressed = (GetAsyncKeyState(MENU_TOGGLE_KEY) & 0x8000) != 0;
+        HWND foreground = GetForegroundWindow();
+        bool windowFocused = (foreground == targetWindow);
+        // Don't trigger menu toggle when Ctrl is held (Ctrl+~ is a hotkey for monitoring bar toggle)
+        bool ctrlHeld = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+        bool keyIsPressed = windowFocused && !ctrlHeld && (GetAsyncKeyState(MENU_TOGGLE_KEY) & 0x8000) != 0;
 
         if (keyIsPressed && !keyWasPressed)
         {
@@ -516,41 +847,151 @@ namespace
                 showMenu = true;
                 LOG_INFO(L"[UxHook] Menu OPENING");
 
-                // Start open animation for sidebar only
-                // (monitoring bar has its own logic based on ctx.isMonitoringEnabled)
                 MenuAnimations::StartSidePanelOpen();
-
-                // Update global state for WndProc
                 UxHook_SetMenuOpen(true);
-
-                // Cursor control (OptiScaler-style)
                 CursorHook::OnMenuOpen();
+
+                // Hook WndProc NOW - only while menu is open
+                HookWndProc(targetWindow);
             }
             else
             {
-                // Closing menu - start animation but don't release control yet
+                // Closing menu - start animation
                 LOG_INFO(L"[UxHook] Menu CLOSING");
-
-                // Start close animation for sidebar only
                 MenuAnimations::StartSidePanelClose();
             }
         }
         keyWasPressed = keyIsPressed;
 
-        // Check if close animation finished - then release control to game
-        // Only check sidebar, monitoring bar is independent
+        // Check if close animation finished
         if (showMenu && MenuAnimations::IsSidePanelFullyClosed())
         {
             showMenu = false;
             LOG_TRACE(L"[UxHook] Menu CLOSED (animation complete)");
 
-            // Update global state
-            UxHook_SetMenuOpen(false);
+            // Unhook WndProc FIRST - stop intercepting messages
+            UnhookWndProc();
 
-            // Release cursor control
+            UxHook_SetMenuOpen(false);
             CursorHook::OnMenuClose();
             CursorHook::SendSetCursorToGame(targetWindow);
             SettingsMenu::OnMenuClosed();
+        }
+    }
+
+    // =========================================================================
+    // Global hotkeys (polled each frame, independent of menu state / WndProc)
+    //
+    // Gated by ctx.areHotKeysEnabled. All hotkeys require Ctrl + key combo and
+    // only fire when the game window is in focus.
+    //
+    //   Ctrl+~            toggle monitoring bar (ctx.isMonitoringEnabled)
+    //                     -- gated additionally by ctx.isUiEnabled, because the
+    //                     monitoring bar / side panel cannot render without UI
+    //   Ctrl+1..Ctrl+6    set ctx.nvapi.mfgEnforcedMode = N (x1..x6)
+    //                     -- works regardless of ctx.isUiEnabled; these are
+    //                     pure state toggles and don't need the overlay
+    //
+    // Ctrl+5 / Ctrl+6 require sl.dlss_g >= 2.11 (same check as the combo box).
+    //
+    // IMPORTANT: This function is called from RenderOverlay BEFORE the
+    // isUiEnabled early-out, so that MFG mode hotkeys remain available even
+    // when the in-game UI is disabled.
+    // =========================================================================
+
+    void HandleHotkeys(HWND targetWindow)
+    {
+        if (!ctx.areHotKeysEnabled)
+            return;
+
+        HWND foreground = GetForegroundWindow();
+        if (foreground != targetWindow)
+            return;
+
+        // Must hold Ctrl (either Left or Right)
+        bool ctrlHeld = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+        if (!ctrlHeld)
+            return;
+
+        // Edge detection: [0]=~, [1..6]=Ctrl+1..Ctrl+6
+        static bool s_wasPressed[7] = { false, false, false, false, false, false, false };
+
+        auto edge = [](int vk, int slot) -> bool {
+            bool now = (GetAsyncKeyState(vk) & 0x8000) != 0;
+            bool fired = now && !s_wasPressed[slot];
+            s_wasPressed[slot] = now;
+            return fired;
+            };
+
+        // ---- Ctrl+~ : toggle monitoring bar ----
+        // Only meaningful when UI is enabled; still poll edge() so we keep the
+        // press/release state consistent and don't fire spuriously when UI is
+        // re-enabled with the key still held down.
+        {
+            bool tildeEdge = edge(SettingsMenu::GetMenuToggleKey(), 0);
+            if (tildeEdge && ctx.isUiEnabled)
+            {
+                ctx.isMonitoringEnabled = !ctx.isMonitoringEnabled;
+                LOG_INFO(ctx.isMonitoringEnabled
+                    ? L"[UxHook] Hotkey Ctrl+~: monitoring bar ON"
+                    : L"[UxHook] Hotkey Ctrl+~: monitoring bar OFF");
+            }
+        }
+
+        // ---- Ctrl+1..Ctrl+6 : MFG mode override ----
+        // Validate 5X/6X against sl.dlss_g >= 2.11, mirroring the combo-box logic
+        // in SettingsMenu.cpp (RenderSidePanel "MFG Mode Override" block).
+        auto dlssg211Supported = []() -> bool {
+            const std::wstring& dlssgVer = ctx.streamline.dlssgVersion;
+            int dmaj = 0, dmin = 0;
+            if (swscanf_s(dlssgVer.c_str(), L"%d.%d", &dmaj, &dmin) >= 2)
+                return (dmaj > 2) || (dmaj == 2 && dmin >= 11);
+            return false;
+            };
+
+        // Streamline must be loaded & >= 2.7.x for any override to be legal
+        auto streamlineOk = []() -> bool {
+            const std::wstring& ver = ctx.streamline.interposerVersion;
+            int major = 0, minor = 0;
+            if (swscanf_s(ver.c_str(), L"%d.%d", &major, &minor) >= 2)
+            {
+                bool loaded = (major > 0 || minor > 0);
+                bool versionOk = (major > 2) || (major == 2 && minor >= 7);
+                return loaded && versionOk;
+            }
+            return false;
+            };
+
+        for (int n = 1; n <= 6; ++n)
+        {
+            int vk = '0' + n;  // VK_1..VK_6 are '1'..'6' (0x31..0x36)
+            if (!edge(vk, n))
+                continue;
+
+            if (!streamlineOk())
+            {
+                LOG_WARNING(L"[UxHook] Hotkey Ctrl+" + std::to_wstring(n) + L" ignored: Streamline not loaded or < 2.7");
+                continue;
+            }
+            if (n >= 5 && !dlssg211Supported())
+            {
+                LOG_WARNING(L"[UxHook] Hotkey Ctrl+" + std::to_wstring(n) + L" ignored: sl.dlss_g < 2.11 (x5/x6 unsupported)");
+                continue;
+            }
+
+            if (ctx.nvapi.mfgEnforcedMode == n)
+            {
+                LOG_DEBUG(L"[UxHook] Hotkey Ctrl+" + std::to_wstring(n) + L" already at x" + std::to_wstring(n));
+
+                continue;
+            }
+
+            ctx.nvapi.mfgEnforcedMode = n;
+            LOG_INFO(L"[UxHook] Hotkey Ctrl+" + std::to_wstring(n) + L": mfgEnforcedMode = x" + std::to_wstring(n));
+
+            // Apply immediately via Streamline. Any non-zero nvapi value (including x1)
+            // goes through ForceApply; the side-panel combo does the same thing.
+            ::StreamlineProxy_ForceApplyMfgMode();
         }
     }
 }
@@ -570,7 +1011,6 @@ namespace UxHook
     // =========================================================================
     static GraphicsAPI DetectGraphicsAPI(IDXGISwapChain* pSwapChain)
     {
-        // If forced, use that
         if (g_ForceAPI != GraphicsAPI::Unknown)
         {
             LOG_INFO(g_ForceAPI == GraphicsAPI::D3D11 ?
@@ -578,7 +1018,6 @@ namespace UxHook
             return g_ForceAPI;
         }
 
-        // Try both and see what we get
         Microsoft::WRL::ComPtr<ID3D11Device> d3d11Device;
         Microsoft::WRL::ComPtr<ID3D12Device> d3d12Device;
 
@@ -592,14 +1031,12 @@ namespace UxHook
             LOG_DEBUG(ss.str());
         }
 
-        // If we have a stored D3D12 CommandQueue, it's definitely D3D12
         if (g_SwapChainCommandQueue != nullptr)
         {
             LOG_DEBUG(L"[UxHook] Detected: D3D12 (CommandQueue was set)");
             return GraphicsAPI::D3D12;
         }
 
-        // If only one succeeds, use that
         if (SUCCEEDED(hr12) && FAILED(hr11))
         {
             LOG_INFO(L"[UxHook] Detected: D3D12");
@@ -612,7 +1049,6 @@ namespace UxHook
             return GraphicsAPI::D3D11;
         }
 
-        // If both succeed (D3D11on12?), prefer D3D11 backend
         if (SUCCEEDED(hr11) && SUCCEEDED(hr12))
         {
             LOG_WARNING(L"[UxHook] Both APIs detected - using D3D11 (might be D3D11on12)");
@@ -623,7 +1059,6 @@ namespace UxHook
         return GraphicsAPI::Unknown;
     }
 
-    // Force specific API
     void ForceGraphicsAPI(GraphicsAPI api)
     {
         g_ForceAPI = api;
@@ -668,7 +1103,6 @@ namespace UxHook
 
         LOG_DEBUG(L"[UxHook] InitializeImGui_D3D11: Starting...");
 
-        // Get device
         if (FAILED(pSwapChain->GetDevice(IID_PPV_ARGS(&state.D3D11Device))))
         {
             LOG_WARNING(L"[UxHook] D3D11 Init: FAILED GetDevice");
@@ -684,7 +1118,6 @@ namespace UxHook
 
         pSwapChain->QueryInterface(IID_PPV_ARGS(&state.SwapChain));
 
-        // Get HWND from SwapChain description
         DXGI_SWAP_CHAIN_DESC swapChainDesc;
         if (FAILED(pSwapChain->GetDesc(&swapChainDesc)))
         {
@@ -720,11 +1153,8 @@ namespace UxHook
 
         UxImGuiIO& io = UxImGui::GetIO();
         io.ConfigFlags |= UxImGuiConfigFlags_NavEnableKeyboard;
-        // IMPORTANT: Do NOT enable ViewportsEnable - it conflicts with OptiScaler
         UxImGui::StyleColorsDark();
 
-        // Do NOT call UxImGui_ImplWin32_Init() - OptiScaler already registered the window class
-        // We'll manually set up IO in RenderFrame instead
         io.BackendPlatformName = "imgui_impl_win32_uxhook";
         io.BackendFlags |= UxImGuiBackendFlags_HasMouseCursors;
         io.BackendFlags |= UxImGuiBackendFlags_HasSetMousePos;
@@ -738,17 +1168,11 @@ namespace UxHook
             return false;
         }
 
-        // Hook WndProc to block mouse input when our menu is open
-        WNDPROC currentWndProc = (WNDPROC)GetWindowLongPtrW(state.TargetWindow, GWLP_WNDPROC);
-        if (currentWndProc != HookedWndProc)
-        {
-            state.OriginalWndProc = (WNDPROC)SetWindowLongPtrW(state.TargetWindow, GWLP_WNDPROC, (LONG_PTR)HookedWndProc);
-            LOG_DEBUG(L"[UxHook] D3D11 Init: WndProc hooked");
-        }
-        else
-        {
-            LOG_WARNING(L"[UxHook] D3D11 Init: WndProc already hooked");
-        }
+        // NOTE: WndProc is NOT hooked here anymore.
+        // It will be hooked dynamically when our menu opens (HandleMenuToggle)
+        // This avoids infinite recursion with OptiScaler's WndProc hook.
+        state.OriginalWndProc = nullptr;
+        LOG_INFO(L"[UxHook] D3D11 Init: WndProc hook DEFERRED (will hook on menu open)");
 
         state.API = GraphicsAPI::D3D11;
         state.StartTime = GetTickCount64();
@@ -756,13 +1180,13 @@ namespace UxHook
         g_Initialized = true;
         g_InitializedSwapChain = pSwapChain;
 
-        // Set target window for SettingsMenu mouse input
         SettingsMenu::SetTargetWindow(state.TargetWindow);
 
-        // Install cursor hooks to control cursor when menu is open
+        // Install cursor hooks (Detours) - these are always active
         CursorHook::Install();
 
-        // CRITICAL: Restore previous UxImGui context so OptiScaler keeps working!
+        ResolveColorState(pSwapChain);
+
         if (existingContext)
             UxImGui::SetCurrentContext(existingContext);
 
@@ -780,40 +1204,32 @@ namespace UxHook
             return;
         }
 
-        // Note: Context is already set to g_UxImGuiContext by RenderOverlay()
-
-        // Check menu state first (declared here for use below)
         static bool showMenu = false;
         static bool keyWasPressed = false;
         static LARGE_INTEGER lastTime11 = {};
         static LARGE_INTEGER freq11 = {};
         static bool animationsInitialized = false;
 
-        // Initialize animations once
         if (!animationsInitialized)
         {
             MenuAnimations::Init();
             animationsInitialized = true;
         }
 
-        // DX11 backend NewFrame
         UxImGui_ImplDX11_NewFrame();
 
-        // Manual Win32 IO setup (shared helper)
         UpdateImGuiIO(state.TargetWindow, showMenu, lastTime11, freq11);
 
         UxImGui::NewFrame();
 
-        // Update animations every frame
         MenuAnimations::Update(UxImGui::GetIO().DeltaTime);
 
-        // ALWAYS render monitoring overlay (independent of menu state)
         SettingsMenu::RenderMonitoringOverlay();
 
-        // Handle menu toggle (shared helper)
         HandleMenuToggle(showMenu, keyWasPressed, state.TargetWindow);
+        // HandleHotkeys intentionally moved to RenderOverlay so it runs even
+        // when ctx.isUiEnabled == false.
 
-        // Render menu if open OR if sidebar is animating (to show close animation)
         if (showMenu || MenuAnimations::IsSidePanelAnimating())
         {
             SettingsMenu::Render(&showMenu);
@@ -827,8 +1243,6 @@ namespace UxHook
             state.D3D11Context->OMSetRenderTargets(1, state.D3D11RenderTargetView.GetAddressOf(), nullptr);
             UxImGui_ImplDX11_RenderDrawData(drawData);
         }
-
-        // Note: Context restoration is handled by RenderOverlay()
     }
 
     // =========================================================================
@@ -874,6 +1288,15 @@ namespace UxHook
             state.D3D12Device->CreateRenderTargetView(state.RenderTargets[i].Get(), &rtvDesc, state.RtvHandles[i]);
         }
 
+        // Offscreen target the overlay actually draws into. Sized to the back
+        // buffer; the composite pass is a 1:1 blit so there is no filtering.
+        if (!UxCompose::EnsureResources(state.D3D12Device.Get(),
+            desc.BufferDesc.Width, desc.BufferDesc.Height, desc.BufferDesc.Format))
+        {
+            LOG_WARNING(L"[UxHook] UxCompose::EnsureResources FAILED - overlay will not render");
+            return false;
+        }
+
         return true;
     }
 
@@ -881,6 +1304,8 @@ namespace UxHook
     {
         for (UINT i = 0; i < UxHook::RenderState::MaxBufferCount; i++)
             g_State.RenderTargets[i].Reset();
+
+        UxCompose::ReleaseSizeDependent();
     }
 
     static void WaitForGpu_D3D12()
@@ -906,21 +1331,18 @@ namespace UxHook
 
         LOG_INFO(L"[UxHook] InitializeImGui_D3D12: Starting...");
 
-        // Get device
         if (FAILED(pSwapChain->GetDevice(IID_PPV_ARGS(&state.D3D12Device))))
         {
             LOG_WARNING(L"[UxHook] D3D12 Init: FAILED GetDevice");
             return false;
         }
 
-        // Get or use stored CommandQueue
         if (g_SwapChainCommandQueue)
         {
             state.GameCommandQueue = g_SwapChainCommandQueue;
         }
         else
         {
-            // Create our own queue as fallback
             D3D12_COMMAND_QUEUE_DESC queueDesc = {};
             queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
             queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
@@ -939,7 +1361,6 @@ namespace UxHook
         pSwapChain->GetDesc(&swapChainDesc);
         state.TargetWindow = swapChainDesc.OutputWindow;
 
-        // Create SRV heap
         D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
         srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         srvHeapDesc.NumDescriptors = 64;
@@ -950,25 +1371,21 @@ namespace UxHook
 
         g_SrvDescriptorAllocator.Create(state.D3D12Device.Get(), state.SrvHeap.Get());
 
-        // Create command allocators
         for (UINT i = 0; i < NUM_BACK_BUFFERS; i++)
         {
             if (FAILED(state.D3D12Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_CommandAllocators[i]))))
                 return false;
         }
 
-        // Create command list
         if (FAILED(state.D3D12Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
             g_CommandAllocators[0].Get(), nullptr, IID_PPV_ARGS(&state.CommandList))))
             return false;
         state.CommandList->Close();
 
-        // Create fence
         if (FAILED(state.D3D12Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&state.Fence))))
             return false;
         state.FenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
 
-        // Create render targets
         if (!CreateRenderTargets_D3D12())
             return false;
 
@@ -979,18 +1396,19 @@ namespace UxHook
 
         UxImGuiIO& io = UxImGui::GetIO();
         io.ConfigFlags |= UxImGuiConfigFlags_NavEnableKeyboard;
-        // IMPORTANT: Do NOT enable ViewportsEnable - it conflicts with OptiScaler
         UxImGui::StyleColorsDark();
 
-        // Do NOT call UxImGui_ImplWin32_Init() - OptiScaler already registered the window class
-        // We'll manually set up IO in RenderFrame instead
         io.BackendPlatformName = "imgui_impl_win32_uxhook";
         io.BackendFlags |= UxImGuiBackendFlags_HasMouseCursors;
         io.BackendFlags |= UxImGuiBackendFlags_HasSetMousePos;
 
-        DXGI_FORMAT rtvFormat = swapChainDesc.BufferDesc.Format;
-        if (rtvFormat == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB) rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-        else if (rtvFormat == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) rtvFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+        // ImGui now ALWAYS renders into the UxCompose offscreen target, never
+        // straight into the back buffer, so the PSO format is fixed and no
+        // longer depends on the swapchain. This matters because the colour
+        // space is often not known yet at this point - SetColorSpace1 routinely
+        // arrives after the first Present - and a mode-dependent format would
+        // force a PSO rebuild mid-session.
+        DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
         UxImGui_ImplDX12_InitInfo initInfo = {};
         initInfo.Device = state.D3D12Device.Get();
@@ -1010,17 +1428,11 @@ namespace UxHook
             return false;
         }
 
-        // Hook WndProc to block mouse input when our menu is open
-        WNDPROC currentWndProc = (WNDPROC)GetWindowLongPtrW(state.TargetWindow, GWLP_WNDPROC);
-        if (currentWndProc != HookedWndProc)
-        {
-            state.OriginalWndProc = (WNDPROC)SetWindowLongPtrW(state.TargetWindow, GWLP_WNDPROC, (LONG_PTR)HookedWndProc);
-            LOG_DEBUG(L"[UxHook] D3D12 Init: WndProc hooked");
-        }
-        else
-        {
-            LOG_WARNING(L"[UxHook] D3D12 Init: WndProc already hooked");
-        }
+        // NOTE: WndProc is NOT hooked here anymore.
+        // It will be hooked dynamically when our menu opens (HandleMenuToggle)
+        // This avoids infinite recursion with OptiScaler's WndProc hook.
+        state.OriginalWndProc = nullptr;
+        LOG_INFO(L"[UxHook] D3D12 Init: WndProc hook DEFERRED (will hook on menu open)");
 
         state.API = GraphicsAPI::D3D12;
         state.StartTime = GetTickCount64();
@@ -1028,13 +1440,13 @@ namespace UxHook
         g_Initialized = true;
         g_InitializedSwapChain = pSwapChain;
 
-        // Set target window for SettingsMenu mouse input
         SettingsMenu::SetTargetWindow(state.TargetWindow);
 
-        // Install cursor hooks to control cursor when menu is open
+        // Install cursor hooks (Detours) - these are always active
         CursorHook::Install();
 
-        // CRITICAL: Restore previous UxImGui context so OptiScaler keeps working!
+        ResolveColorState(pSwapChain);
+
         if (existingContext)
             UxImGui::SetCurrentContext(existingContext);
 
@@ -1046,9 +1458,6 @@ namespace UxHook
     {
         auto& state = g_State;
 
-        // Note: Context is already set to g_UxImGuiContext by RenderOverlay()
-        // We don't need to check prevContext here - that's done in RenderOverlay
-
         UINT backBufferIndex = 0;
         Microsoft::WRL::ComPtr<IDXGISwapChain3> swapChain3;
         if (SUCCEEDED(state.SwapChain->QueryInterface(IID_PPV_ARGS(&swapChain3))))
@@ -1057,55 +1466,45 @@ namespace UxHook
         UINT frameIndex = g_FrameCount % NUM_BACK_BUFFERS;
         g_FrameCount++;
 
-        // Wait for previous frame
         if (state.Fence->GetCompletedValue() < state.FenceValue)
         {
             state.Fence->SetEventOnCompletion(state.FenceValue, state.FenceEvent);
             WaitForSingleObject(state.FenceEvent, 100);
         }
 
-        // Reset command allocator and list
         g_CommandAllocators[frameIndex]->Reset();
         state.CommandList->Reset(g_CommandAllocators[frameIndex].Get(), nullptr);
 
-        // CRITICAL: Set our UxImGui context before any UxImGui calls
         UxImGui::SetCurrentContext(g_UxImGuiContext);
 
-        // Check menu state first (declared here for use below)
         static bool showMenu = false;
         static bool keyWasPressed = false;
         static LARGE_INTEGER lastTime12 = {};
         static LARGE_INTEGER freq12 = {};
         static bool animationsInitialized = false;
 
-        // Initialize animations once
         if (!animationsInitialized)
         {
             MenuAnimations::Init();
             animationsInitialized = true;
         }
 
-        // DX12 backend NewFrame
         UxImGui_ImplDX12_NewFrame();
 
-        // Manual Win32 IO setup (shared helper)
         UpdateImGuiIO(state.TargetWindow, showMenu, lastTime12, freq12);
 
         UxImGui::NewFrame();
 
-        // Update animations every frame
         MenuAnimations::Update(UxImGui::GetIO().DeltaTime);
 
-        // ALWAYS render monitoring overlay (independent of menu state)
         SettingsMenu::RenderMonitoringOverlay();
 
-        // Handle menu toggle (shared helper)
         HandleMenuToggle(showMenu, keyWasPressed, state.TargetWindow);
+        // HandleHotkeys intentionally moved to RenderOverlay so it runs even
+        // when ctx.isUiEnabled == false.
 
-        // Render menu if open OR if sidebar is animating (to show close animation)
         if (showMenu || MenuAnimations::IsSidePanelAnimating())
         {
-            // Verify context before rendering our menu
             if (UxImGui::GetCurrentContext() != g_UxImGuiContext)
             {
                 LOG_WARNING(L"[UxHook] D3D12: Context stolen BEFORE SettingsMenu::Render!");
@@ -1115,7 +1514,6 @@ namespace UxHook
             SettingsMenu::Render(&showMenu);
         }
 
-        // Verify context before UxImGui::Render
         if (UxImGui::GetCurrentContext() != g_UxImGuiContext)
         {
             LOG_WARNING(L"[UxHook] D3D12: Context stolen BEFORE UxImGui::Render!");
@@ -1124,7 +1522,6 @@ namespace UxHook
 
         UxImGui::Render();
 
-        // Verify context is still ours after Render
         if (UxImGui::GetCurrentContext() != g_UxImGuiContext)
         {
             LOG_WARNING(L"[UxHook] D3D12: Context stolen AFTER UxImGui::Render!");
@@ -1133,17 +1530,35 @@ namespace UxHook
 
         UxImDrawData* drawData = UxImGui::GetDrawData();
 
-        // Extra safety: verify drawData comes from our context
         if (drawData && drawData->TotalVtxCount > 0 && state.CommandList)
         {
-            // Verify state is still valid
-            if (!state.RenderTargets[backBufferIndex] || !state.SrvHeap)
+            if (!state.RenderTargets[backBufferIndex] || !state.SrvHeap || !UxCompose::IsReady())
             {
-                LOG_WARNING(L"[UxHook] D3D12: RenderTarget or SrvHeap became invalid!");
+                LOG_WARNING(L"[UxHook] D3D12: RenderTarget, SrvHeap or compose target became invalid!");
             }
             else
             {
-                // Transition to RENDER_TARGET
+                DXGI_SWAP_CHAIN_DESC scDesc = {};
+                state.SwapChain->GetDesc(&scDesc);
+
+                // ---- 1. UI into the offscreen target -------------------------
+                // Cleared to transparent black so the result is premultiplied
+                // and every UI-over-UI blend stays in the authoring space.
+                UxCompose::TransitionOffscreenToRenderTarget(state.CommandList.Get());
+
+                D3D12_CPU_DESCRIPTOR_HANDLE overlayRtv = UxCompose::GetOffscreenRtv();
+                const float transparent[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+                state.CommandList->ClearRenderTargetView(overlayRtv, transparent, 0, nullptr);
+                state.CommandList->OMSetRenderTargets(1, &overlayRtv, FALSE, nullptr);
+
+                ID3D12DescriptorHeap* heaps[] = { state.SrvHeap.Get() };
+                state.CommandList->SetDescriptorHeaps(1, heaps);
+
+                UxImGui_ImplDX12_RenderDrawData(drawData, state.CommandList.Get());
+
+                UxCompose::TransitionOffscreenToShaderResource(state.CommandList.Get());
+
+                // ---- 2. composite onto the back buffer -----------------------
                 D3D12_RESOURCE_BARRIER barrier = {};
                 barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
                 barrier.Transition.pResource = state.RenderTargets[backBufferIndex].Get();
@@ -1154,27 +1569,45 @@ namespace UxHook
 
                 state.CommandList->OMSetRenderTargets(1, &state.RtvHandles[backBufferIndex], FALSE, nullptr);
 
-                ID3D12DescriptorHeap* heaps[] = { state.SrvHeap.Get() };
-                state.CommandList->SetDescriptorHeaps(1, heaps);
+                UxCompose::Mode composeMode = UxCompose::Mode::Sdr;
+                float paperWhite = 0.0f;
 
-                UxImGui_ImplDX12_RenderDrawData(drawData, state.CommandList.Get());
+                if (g_ColorStateValid)
+                {
+                    if (g_ColorState.Mode == OverlayColorMode::Hdr10)
+                        composeMode = UxCompose::Mode::Hdr10;
+                    else if (g_ColorState.Mode == OverlayColorMode::ScRgb)
+                        composeMode = UxCompose::Mode::ScRgb;
 
-                // Transition back to PRESENT
+                    paperWhite = g_ColorState.PaperWhiteNits;
+                }
+
+                UxCompose::Draw(state.CommandList.Get(), composeMode, paperWhite,
+                    scDesc.BufferDesc.Width, scDesc.BufferDesc.Height);
+
                 barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
                 barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
                 state.CommandList->ResourceBarrier(1, &barrier);
             }
         }
 
+        // Developer latency probe: piggyback a frame-end GPU timestamp onto the
+        // command list we are already building and submitting. No extra queue,
+        // no extra submit, no new object lifetime. Compiled out when
+        // LATENCY_PROBE == 0.
+        LatencyProbe::D3D12_OnCommandList(state.D3D12Device.Get(),
+            state.GameCommandQueue,
+            state.CommandList.Get());
+
         state.CommandList->Close();
 
         ID3D12CommandList* cmdLists[] = { state.CommandList.Get() };
         state.GameCommandQueue->ExecuteCommandLists(1, cmdLists);
 
+        LatencyProbe::D3D12_OnSubmitted(state.GameCommandQueue);
+
         state.FenceValue++;
         state.GameCommandQueue->Signal(state.Fence.Get(), state.FenceValue);
-
-        // Note: Context restoration is handled by RenderOverlay()
     }
 
     // =========================================================================
@@ -1199,6 +1632,9 @@ namespace UxHook
             return;
 
         LOG_DEBUG(L"[UxHook] OnSwapChainAboutToBeCreated: Releasing overlay refs");
+
+        // Unhook WndProc if hooked (menu might be open during swapchain recreation)
+        UnhookWndProc();
 
         if (g_State.API == GraphicsAPI::D3D12)
             WaitForGpu_D3D12();
@@ -1232,6 +1668,36 @@ namespace UxHook
 
     void RenderOverlay(IDXGISwapChain* pSwapChain)
     {
+        // ---------------------------------------------------------------------
+        // Global hotkeys run BEFORE any UI / overlay gating.
+        //
+        // Rationale: Ctrl+1..Ctrl+6 toggles MFG mode and must work even when
+        // the in-game overlay is disabled (ctx.isUiEnabled=false). These
+        // hotkeys are pure state flips -- they poll GetAsyncKeyState and don't
+        // touch ImGui, so they're safe to call before initialization.
+        //
+        // Ctrl+~ (monitoring bar toggle) is internally gated by isUiEnabled
+        // inside HandleHotkeys, since it has no effect without UI.
+        //
+        // TargetWindow is normally set during D3D11/D3D12 ImGui init; when UI
+        // is disabled that init never runs, so we fall back to the swapchain's
+        // own HWND for the foreground-window check.
+        // ---------------------------------------------------------------------
+        {
+            HWND hotkeyHwnd = g_State.TargetWindow;
+            if (!hotkeyHwnd && pSwapChain)
+            {
+                DXGI_SWAP_CHAIN_DESC desc = {};
+                if (SUCCEEDED(pSwapChain->GetDesc(&desc)))
+                    hotkeyHwnd = desc.OutputWindow;
+            }
+            if (hotkeyHwnd)
+                HandleHotkeys(hotkeyHwnd);
+        }
+
+        if (!ctx.isUiEnabled) {
+            return;
+        }
         std::lock_guard<std::recursive_mutex> lock(g_Mutex);
 
         if (g_OverlayDisabled.load())
@@ -1254,10 +1720,12 @@ namespace UxHook
                 << L", New SwapChain=" << (void*)pSwapChain;
             LOG_WARNING(ss.str());
 
+            // Unhook WndProc before cleanup
+            UnhookWndProc();
+
             if (g_State.API == GraphicsAPI::D3D12)
                 WaitForGpu_D3D12();
 
-            // Cleanup ImGui device objects
             if (g_UxImGuiContext)
             {
                 UxImGui::SetCurrentContext(g_UxImGuiContext);
@@ -1313,12 +1781,10 @@ namespace UxHook
         if (!g_UxImGuiContext)
             return;
 
-        // Note: We now use isolated UxImGui namespace, completely separate from OptiScaler's ImGui
-        // No context conflicts possible - UxImGui::GetCurrentContext() returns OUR context, not OptiScaler's
+        RefreshColorStateIfStale(pSwapChain);
 
-        // Debug: log occasionally
         static int logCounter = 0;
-        if (logCounter++ % 300 == 0)  // Every ~5 seconds
+        if (logCounter++ % 300 == 0)
         {
             std::wstringstream ss;
             ss << L"[UxHook] RenderOverlay [TID:" << GetCurrentThreadId() << L"]: g_UxImGuiContext="
@@ -1326,7 +1792,6 @@ namespace UxHook
             LOG_TRACE(ss.str());
         }
 
-        // Set our context for rendering (should already be set, but ensure it)
         UxImGui::SetCurrentContext(g_UxImGuiContext);
 
         if (state.API == GraphicsAPI::D3D11)
@@ -1364,6 +1829,11 @@ namespace UxHook
                 CreateRenderTarget_D3D11();
             else if (g_State.API == GraphicsAPI::D3D12)
                 CreateRenderTargets_D3D12();
+
+            // ResizeBuffers can change the back buffer FORMAT. The colour space
+            // itself survives the resize in DXGI, so the stored blob stays
+            // valid - but the derived mode must be recomputed.
+            ResolveColorState(pSwapChain);
         }
     }
 
@@ -1381,9 +1851,9 @@ namespace UxHook
 
 // =============================================================================
 // WndProc Hook - Block mouse input to game when our menu is open
+// Only active while menu is open (hooked/unhooked dynamically)
 // =============================================================================
 
-// External variable to check if our menu is open
 namespace { bool g_OurMenuIsOpen = false; }
 
 void UxHook_SetMenuOpen(bool open) { g_OurMenuIsOpen = open; }
@@ -1391,16 +1861,36 @@ bool UxHook_IsMenuOpen() { return g_OurMenuIsOpen; }
 
 static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    if (!g_State.OriginalWndProc)
+    // Safety guard against infinite recursion if WndProc chain forms a cycle
+    // (e.g. OptiScaler re-hooks while our menu is open)
+    // Flag stays TRUE during CallWindowProcW so re-entry is detected
+    static thread_local bool inHookedWndProc = false;
+
+    if (inHookedWndProc)
         return DefWindowProcW(hWnd, msg, wParam, lParam);
 
+    inHookedWndProc = true;
+
+    if (!g_State.OriginalWndProc)
+    {
+        inHookedWndProc = false;
+        return DefWindowProcW(hWnd, msg, wParam, lParam);
+    }
+
+    // Always forward shutdown messages immediately
+    if (msg == WM_QUIT || msg == WM_CLOSE || msg == WM_DESTROY ||
+        (msg == WM_SYSCOMMAND && wParam == SC_CLOSE))
+    {
+        LRESULT result = CallWindowProcW(g_State.OriginalWndProc, hWnd, msg, wParam, lParam);
+        inHookedWndProc = false;
+        return result;
+    }
+
     // ONLY intercept input when OUR menu is open
-    // This allows OptiScaler's menu to work when ours is closed
     if (g_OurMenuIsOpen && g_UxImGuiContext && g_State.Initialized && !g_OverlayDisabled.load())
     {
-        // Debug: log that we're in menu-open WndProc path
         static int debugCounter = 0;
-        if (debugCounter++ % 600 == 0)  // Every ~10 seconds at 60fps
+        if (debugCounter++ % 600 == 0)
         {
             LOG_TRACE(L"[UxHook] WndProc: Menu OPEN, processing input");
         }
@@ -1410,37 +1900,29 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
         UxImGuiIO& io = UxImGui::GetIO();
 
-        // Use UxImGui software cursor - like OptiScaler's io.MouseDrawCursor = _isVisible
-        // This is needed because games like Cyberpunk hide the system cursor
         io.MouseDrawCursor = true;
         io.WantCaptureKeyboard = true;
         io.WantCaptureMouse = true;
 
-        // CRITICAL: Hide hardware cursor when using software cursor to avoid double cursor
-        // We need to do this every WndProc call because some apps constantly reset it
         SetCursor(NULL);
 
-        // We don't use UxImGui_ImplWin32_WndProcHandler since we didn't init that backend
-        // Instead, manually handle key input for UxImGui
         bool handled = false;
         switch (msg)
         {
         case WM_SETCURSOR:
-            // Hide hardware cursor when menu is open - we use software cursor
             SetCursor(NULL);
             if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
-            return TRUE;  // Tell Windows we handled it
+            inHookedWndProc = false;
+            return TRUE;
 
         case WM_KEYDOWN:
         case WM_KEYUP:
         case WM_SYSKEYDOWN:
         case WM_SYSKEYUP:
-            // Let ` (backtick) through for menu toggle, block other keys
             if (wParam != MENU_TOGGLE_KEY)
                 handled = true;
             break;
         case WM_CHAR:
-            // Add text input to UxImGui
             if (wParam > 0 && wParam < 0x10000)
                 io.AddInputCharacterUTF16((unsigned short)wParam);
             handled = true;
@@ -1458,11 +1940,10 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         if (handled)
         {
             if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
+            inHookedWndProc = false;
             return TRUE;
         }
 
-        // Block these messages when menu is open (like OptiScaler's switch statement)
-        // Note: Mouse position and buttons are handled via GetCursorPos/GetAsyncKeyState in render loop
         switch (msg)
         {
         case WM_LBUTTONDOWN:
@@ -1471,43 +1952,36 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         case WM_LBUTTONDBLCLK:
         case WM_RBUTTONDBLCLK:
         case WM_MBUTTONDBLCLK:
-            // Block button down - we handle via GetAsyncKeyState
             if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
+            inHookedWndProc = false;
             return TRUE;
 
         case WM_LBUTTONUP:
         case WM_RBUTTONUP:
         case WM_MBUTTONUP:
-            // Forward button up to game (like OptiScaler)
             break;
 
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
             if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
+            inHookedWndProc = false;
             return TRUE;
 
         case WM_MOUSEMOVE:
-            // BLOCK mouse move to prevent camera movement in games like Witcher 3
-            // Our menu gets mouse position via GetCursorPos in render loop
             if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
-            return TRUE;
-
-        case WM_SETCURSOR:
-            // Block cursor changes when menu is open
-            SetCursor(NULL);
-            if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
+            inHookedWndProc = false;
             return TRUE;
 
         case WM_XBUTTONDOWN:
         case WM_XBUTTONUP:
         case WM_XBUTTONDBLCLK:
-            // Block these entirely when menu is open (like OptiScaler)
             if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
+            inHookedWndProc = false;
             return TRUE;
 
         case WM_INPUT:
-            // Block raw input when menu is open
             if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
+            inHookedWndProc = false;
             return TRUE;
 
         default:
@@ -1517,7 +1991,9 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         if (prev && prev != g_UxImGuiContext) UxImGui::SetCurrentContext(prev);
     }
 
-    return CallWindowProcW(g_State.OriginalWndProc, hWnd, msg, wParam, lParam);
+    LRESULT result = CallWindowProcW(g_State.OriginalWndProc, hWnd, msg, wParam, lParam);
+    inHookedWndProc = false;
+    return result;
 }
 
 // =============================================================================
@@ -1526,7 +2002,7 @@ static LRESULT CALLBACK HookedWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 bool UxInit()
 {
-    LOG_TRACE(L"[UxHook] UxInit() called - v11 DRY refactor");
+    LOG_TRACE(L"[UxHook] UxInit() called - v12 Dynamic WndProc");
     return true;
 }
 
@@ -1541,15 +2017,14 @@ void UxShutdown()
         if (g_State.API == UxHook::GraphicsAPI::D3D12)
             UxHook::WaitForGpu_D3D12();
 
-        // Restore original WndProc
-        if (g_State.OriginalWndProc && g_State.TargetWindow)
-        {
-            SetWindowLongPtrW(g_State.TargetWindow, GWLP_WNDPROC, (LONG_PTR)g_State.OriginalWndProc);
-            LOG_WARNING(L"[UxHook] WndProc restored");
-        }
+        // Unhook WndProc if still hooked (menu was open during shutdown)
+        UnhookWndProc();
 
         // Uninstall cursor hooks
         CursorHook::Uninstall();
+
+        // @fixme: dirty workaround for on-exit crashes in some AMD GPU drivers
+        LOG_INFO(L"[UxHook] Dirty shutdown complete"); return;
 
         if (g_UxImGuiContext)
         {
@@ -1560,8 +2035,6 @@ void UxShutdown()
             else if (g_State.API == UxHook::GraphicsAPI::D3D12)
                 UxImGui_ImplDX12_Shutdown();
 
-            // Note: We don't call UxImGui_ImplWin32_Shutdown() because we never called UxImGui_ImplWin32_Init()
-            // We use manual IO setup instead
             UxImGui::DestroyContext(g_UxImGuiContext);
             g_UxImGuiContext = nullptr;
         }
@@ -1569,6 +2042,8 @@ void UxShutdown()
         if (g_State.API == UxHook::GraphicsAPI::D3D12)
         {
             g_SrvDescriptorAllocator.Destroy();
+
+            UxCompose::Shutdown();
 
             if (g_State.FenceEvent)
                 CloseHandle(g_State.FenceEvent);
@@ -1588,5 +2063,3 @@ void UxShutdown()
 
     LOG_INFO(L"[UxHook] Shutdown complete");
 }
-
-

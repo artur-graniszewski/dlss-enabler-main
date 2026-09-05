@@ -16,7 +16,23 @@ public:
 
     void TryInstallOnDemand() { runPhase(HookPhase::ON_DEMAND); }
 
+    void UninstallAll() {
+        runUninstallPhase(HookPhase::ON_DEMAND);
+        runUninstallPhase(HookPhase::LATE);
+        runUninstallPhase(HookPhase::CORE);
+        runUninstallPhase(HookPhase::EARLY);
+    }
+
 private:
+    void runUninstallPhase(HookPhase ph) {
+        auto hooks = HookRegistry::Instance().GetSorted(ph);
+        // odwrotna kolejnoœæ w ramach fazy: ni¿szy priority = póŸniej instalowane = wczeœniej odinstalowywane
+        std::reverse(hooks.begin(), hooks.end());
+        for (auto* h : hooks) {
+            h->Uninstall(ctx_, api_);
+        }
+    }
+
     bool runPhase(HookPhase ph) {
         auto hooks = HookRegistry::Instance().GetSorted(ph);
         for (auto* h : hooks) {

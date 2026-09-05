@@ -7,7 +7,7 @@ namespace Preloader
 	static void PreloadStreamline()
 	{
 		auto dir = Common::GetModuleDirectory();
-		bool isUE; 
+		bool isUE;
 
 		if (dir.ends_with(L"\\Binaries\\Win64")) {
 			isUE = true;
@@ -21,9 +21,9 @@ namespace Preloader
 
 		LOG_INFO(L"[INIT] Preloader: searching for Streamline");
 		const wchar_t* bruteInterposerPaths[] = {
-			L"sl.interposer.dll",
-			L"..\\..\\..\\Engine\\Plugins\\Streamline\\Binaries\\ThirdParty\\Win64\\sl.interposer.dll",
-			L"..\\..\\..\\Engine\\Plugins\\Runtime\\Nvidia\\Streamline\\Binaries\\ThirdParty\\Win64\\sl.interposer.dll",
+			L"sl2.interposer.dll",
+			//L"..\\..\\..\\Engine\\Plugins\\Streamline\\Binaries\\ThirdParty\\Win64\\sl.interposer.dll",
+			//L"..\\..\\..\\Engine\\Plugins\\Runtime\\Nvidia\\Streamline\\Binaries\\ThirdParty\\Win64\\sl.interposer.dll",
 		};
 
 		bool slFound = false;
@@ -40,7 +40,7 @@ namespace Preloader
 		}
 	}
 
-	HMODULE OnLibraryLoad(std::wstring libName, bool &redirect)
+	HMODULE OnLibraryLoad(std::wstring libName, bool& redirect)
 	{
 		redirect = false;
 

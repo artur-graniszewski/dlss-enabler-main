@@ -34,34 +34,54 @@ static bool IsConsoleApplication()
     return false;
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reasonForCall, LPVOID lpReserved) 
+static DWORD WINAPI HardKillThread(LPVOID param)
+{
+    Sleep(reinterpret_cast<DWORD>(param));
+    TerminateProcess(GetCurrentProcess(), 0);
+    return 0;
+}
+
+static void HardKillWatchdog(DWORD delayMs)
+{
+    HANDLE h = CreateThread(nullptr, 0, HardKillThread,
+        reinterpret_cast<LPVOID>(delayMs), 0, nullptr);
+    if (h) CloseHandle(h);
+}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reasonForCall, LPVOID lpReserved)
 {
     hSelf = hModule;
     dllModule = hModule;
     switch (reasonForCall) {
-        case DLL_PROCESS_ATTACH:
-            DisableThreadLibraryCalls(hModule);
-            Exports::Configure(hModule);
-            if (!isInitialized) {
-                if (!IsConsoleApplication()) {
-                    isInitialized = true;
-                    Common::Initialize();  
-                    Core::Initialize(hModule);
-                    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, nullptr, &hModule);
-                    Preloader::OnModuleLoad();
-                    LOG_DEBUG(L"[MAIN] DLL Loaded");
-                    
-                }
-            }
+    case DLL_PROCESS_ATTACH:
+        DisableThreadLibraryCalls(hModule);
+        Exports::ConfigureProxy(hModule);
+        if (!isInitialized) {
+            if (!IsConsoleApplication()) {
+                isInitialized = true;
+                Common::Initialize();
+                Core::Initialize(hModule);
 
-            break;
-        case DLL_PROCESS_DETACH:
-            if (!isInitialized) {
-                return TRUE;
-            }
+                // Pin this DLL as hooks can't be removed once they're enabled.
+                GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, nullptr, &hModule);
+                Preloader::OnModuleLoad();
 
-            Core::Finish(hModule);
-            break;
+
+                LOG_DEBUG(L"[MAIN] DLL Loaded");
+
+            }
+        }
+
+        break;
+    case DLL_PROCESS_DETACH:
+        if (!isInitialized) {
+            return TRUE;
+        }
+
+        HardKillWatchdog(4000);
+        Core::Finish(hModule);
+        TerminateProcess(GetCurrentProcess(), 0);
+        break;
     }
     return TRUE;
 }

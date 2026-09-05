@@ -29,4 +29,18 @@ struct HookGdi32Hags : IHook {
         }
         return txn.commit();
     }
+
+    void Uninstall(Context& ctx, IDetourApi& api) override {
+        DetourTxn txn(api);
+        if (gOrigEnumAdapters2) {
+            txn.detach((void**)&gOrigEnumAdapters2, (void*)&MyD3DKMTEnumAdapters2, "D3DKMTEnumAdapters2");
+        }
+        if (gOrigQueryAdapterInfo) {
+            txn.detach((void**)&gOrigQueryAdapterInfo, (void*)&MyD3DKMTQueryAdapterInfo, "D3DKMTQueryAdapterInfo");
+        }
+        if (txn.commit()) {
+            gOrigEnumAdapters2 = nullptr;
+            gOrigQueryAdapterInfo = nullptr;
+        }
+    }
 };

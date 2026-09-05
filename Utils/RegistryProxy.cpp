@@ -3,7 +3,7 @@
 #include <map>
 #include "../Core/Context.h"
 #include "RegistryProxy.h"
-#define REGHOOK_ONa
+#define REGHOOK_ONA 
 
 
 std::wstring GetKeyName(HKEY hKey) {
@@ -46,7 +46,7 @@ std::wstring GetPredefinedKeyName(HKEY hKey) {
 	}
 
 	return L"";
-} 
+}
 
 // Helper function to build the full registry key path
 std::wstring BuildRegistryKeyPath(HKEY hKey) {
@@ -106,10 +106,13 @@ LSTATUS WINAPI proxy_RegGetValueW(
 	PVOID   pvData,
 	LPDWORD pcbData
 ) {
-	std::wstring valueName = std::wstring(lpValue);
+	// lpValue can be NULL per WinAPI spec - passthrough safely
+	if (lpValue != NULL) {
+		std::wstring valueName = std::wstring(lpValue);
 #ifdef REGHOOK_ON
-	LOG_WARNING(L"[REG]     |___(RegGetValueW) VALUE: " + valueName);
+		LOG_WARNING(L"[REG]     |___(RegGetValueW) VALUE: " + valueName);
 #endif
+	}
 	// Call the original function
 	return OriginalRegGetValueW(hkey, lpSubKey, lpValue, dwFlags, pdwType, pvData, pcbData);
 }
@@ -164,7 +167,11 @@ LONG WINAPI proxy_RegQueryValueExW(
 		if (lpcbData != nullptr) {
 			// If lpData is NULL, we're being asked for the required size
 			if (lpData == nullptr) {
-				LOG_INFO(L"[INIT] HwSchMode spoofed in system registry: returning data size only");
+				static bool isLogged = false;
+				if (!isLogged) {
+					LOG_INFO(L"[INIT] HwSchMode spoofed in system registry: returning data size only");
+					isLogged = true;
+				}
 				*lpcbData = sizeof(DWORD); // Indicate the required size
 
 				// Set the type to REG_DWORD
@@ -215,7 +222,7 @@ LONG WINAPI proxy_RegQueryValueExW(
 				LOG_INFO(L"[INIT] Driver version spoofed in system registry");
 			}
 
-			const std::wstring spoofedValue = L"31.0.15.5244";
+			const std::wstring spoofedValue = L"31.0.18.8244";
 			size_t spoofedValueSize = (spoofedValue.size() + 1) * sizeof(wchar_t); // Size in bytes including null terminator
 
 			if (lpData != nullptr && lpcbData != nullptr) {
@@ -240,25 +247,28 @@ LONG WINAPI proxy_RegQueryValueExW(
 				LOG_INFO(L"[INIT] Hardware ID spoofed in system registry");
 			}
 
-			// Handle REG_SZ type
-			std::wstring data(reinterpret_cast<wchar_t*>(lpData), *lpcbData / sizeof(wchar_t));
-			std::wstring newData = data;
-			size_t pos = 0;
+			// Validate pointers before accessing data
+			if (lpData != nullptr && lpcbData != nullptr && *lpcbData >= sizeof(wchar_t)) {
+				// Handle REG_SZ type
+				std::wstring data(reinterpret_cast<wchar_t*>(lpData), *lpcbData / sizeof(wchar_t));
+				std::wstring newData = data;
+				size_t pos = 0;
 
-			// Replace VEN_1002 and VEN_8086 with VEN_10DE in REG_SZ
-			while ((pos = newData.find(L"VEN_1002", pos)) != std::wstring::npos) {
-				newData.replace(pos, 8, L"VEN_10DE");
-				pos += 8; // Move past the replacement
-			}
-			pos = 0;
-			while ((pos = newData.find(L"VEN_8086", pos)) != std::wstring::npos) {
-				newData.replace(pos, 8, L"VEN_10DE");
-				pos += 8; // Move past the replacement
-			}
+				// Replace VEN_1002 and VEN_8086 with VEN_10DE in REG_SZ
+				while ((pos = newData.find(L"VEN_1002", pos)) != std::wstring::npos) {
+					newData.replace(pos, 8, L"VEN_10DE");
+					pos += 8; // Move past the replacement
+				}
+				pos = 0;
+				while ((pos = newData.find(L"VEN_8086", pos)) != std::wstring::npos) {
+					newData.replace(pos, 8, L"VEN_10DE");
+					pos += 8; // Move past the replacement
+				}
 
-			LOG_ERROR(L"NEW PAYLOAD: " + newData);
-			// Copy the new data back
-			wcscpy_s(reinterpret_cast<wchar_t*>(lpData), *lpcbData / sizeof(wchar_t), newData.c_str());
+				LOG_ERROR(L"NEW PAYLOAD: " + newData);
+				// Copy the new data back
+				wcscpy_s(reinterpret_cast<wchar_t*>(lpData), *lpcbData / sizeof(wchar_t), newData.c_str());
+			}
 		}
 	}
 
@@ -288,64 +298,70 @@ LONG WINAPI proxy_RegQueryValueExA(
 		LOG_ERROR(L"=[RegQueryValueExA]=SPOOFED HARDWAREID======================================");
 		// Check the type of the data
 		if (lpType && *lpType == REG_SZ) {
-			// Handle REG_SZ type
-			std::string data(reinterpret_cast<char*>(lpData), *lpcbData);
-			std::string newData = data;
+			// Validate pointers before accessing data
+			if (lpData != nullptr && lpcbData != nullptr && *lpcbData > 0) {
+				// Handle REG_SZ type
+				std::string data(reinterpret_cast<char*>(lpData), *lpcbData);
+				std::string newData = data;
 
-			// Replace VEN_1002 and VEN_8086 with VEN_10DE in REG_SZ
-			size_t pos = 0;
-			while ((pos = newData.find("VEN_1002", pos)) != std::string::npos) {
-				newData.replace(pos, 8, "VEN_10DE");
-				pos += 8; // Move past the replacement
-			}
-			pos = 0;
-			while ((pos = newData.find("VEN_8086", pos)) != std::string::npos) {
-				newData.replace(pos, 8, "VEN_10DE");
-				pos += 8; // Move past the replacement
-			}
-
-			// Copy the new data back
-			memcpy(lpData, newData.c_str(), newData.size() + 1); // +1 for null terminator
-		}
-		else if (lpType && *lpType == REG_MULTI_SZ) {
-			// Handle REG_MULTI_SZ type
-			std::vector<char> data(*lpcbData);
-			memcpy(data.data(), lpData, *lpcbData);
-
-			std::string newData;
-			size_t start = 0;
-			size_t end;
-
-			// Iterate through each string in the multi-string data
-			while (start < data.size()) {
-				end = start;
-				// Find the next null terminator
-				while (end < data.size() && data[end] != '\0') {
-					++end;
-				}
-
-				// Extract the string entry
-				std::string entry(data.data() + start, end - start);
+				// Replace VEN_1002 and VEN_8086 with VEN_10DE in REG_SZ
 				size_t pos = 0;
-
-				// Replace VEN_1002 and VEN_8086 in each entry
-				while ((pos = entry.find("VEN_1002", pos)) != std::string::npos) {
-					entry.replace(pos, 8, "VEN_10DE");
-					pos += 8;
+				while ((pos = newData.find("VEN_1002", pos)) != std::string::npos) {
+					newData.replace(pos, 8, "VEN_10DE");
+					pos += 8; // Move past the replacement
 				}
 				pos = 0;
-				while ((pos = entry.find("VEN_8086", pos)) != std::string::npos) {
-					entry.replace(pos, 8, "VEN_10DE");
-					pos += 8;
+				while ((pos = newData.find("VEN_8086", pos)) != std::string::npos) {
+					newData.replace(pos, 8, "VEN_10DE");
+					pos += 8; // Move past the replacement
 				}
 
-				newData += entry + '\0'; // Append the modified entry and a null terminator
-				start = end + 1; // Move to the next string
+				// Copy the new data back
+				memcpy(lpData, newData.c_str(), newData.size() + 1); // +1 for null terminator
 			}
-			newData += '\0'; // Add the final null terminator
+		}
+		else if (lpType && *lpType == REG_MULTI_SZ) {
+			// Validate pointers before accessing data
+			if (lpData != nullptr && lpcbData != nullptr && *lpcbData > 0) {
+				// Handle REG_MULTI_SZ type
+				std::vector<char> data(*lpcbData);
+				memcpy(data.data(), lpData, *lpcbData);
 
-			// Copy the new data back
-			memcpy(lpData, newData.c_str(), newData.size() + 1); // +1 for null terminator
+				std::string newData;
+				size_t start = 0;
+				size_t end;
+
+				// Iterate through each string in the multi-string data
+				while (start < data.size()) {
+					end = start;
+					// Find the next null terminator
+					while (end < data.size() && data[end] != '\0') {
+						++end;
+					}
+
+					// Extract the string entry
+					std::string entry(data.data() + start, end - start);
+					size_t pos = 0;
+
+					// Replace VEN_1002 and VEN_8086 in each entry
+					while ((pos = entry.find("VEN_1002", pos)) != std::string::npos) {
+						entry.replace(pos, 8, "VEN_10DE");
+						pos += 8;
+					}
+					pos = 0;
+					while ((pos = entry.find("VEN_8086", pos)) != std::string::npos) {
+						entry.replace(pos, 8, "VEN_10DE");
+						pos += 8;
+					}
+
+					newData += entry + '\0'; // Append the modified entry and a null terminator
+					start = end + 1; // Move to the next string
+				}
+				newData += '\0'; // Add the final null terminator
+
+				// Copy the new data back
+				memcpy(lpData, newData.c_str(), newData.size() + 1); // +1 for null terminator
+			}
 		}
 	}
 	return result;
@@ -358,9 +374,14 @@ LSTATUS WINAPI proxy_RegOpenKeyExW(
 	REGSAM samDesired,
 	PHKEY phkResult
 ) {
+	// lpSubKey can be NULL per WinAPI spec (means open the same key again)
+	if (!lpSubKey) {
+		return OriginalRegOpenKeyExW(hKey, lpSubKey, ulOptions, samDesired, phkResult);
+	}
+
 	std::wstring subKey = std::wstring(lpSubKey);
 
-	if (lpSubKey && subKey == L"SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" && !ctx.isRunningUnderWindows) {
+	if (subKey == L"SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers" && !ctx.isRunningUnderWindows) {
 		LOG_INFO(L"[INIT] GraphicsDrivers spoofed in System Registry");
 
 		HKEY magicKey = (HKEY)2137;
@@ -400,6 +421,11 @@ LSTATUS WINAPI proxy_RegOpenKeyA(
 	LPCSTR lpSubKey,
 	PHKEY phkResult
 ) {
+	// lpSubKey can be NULL per WinAPI spec
+	if (!lpSubKey) {
+		return OriginalRegOpenKeyA(hKey, lpSubKey, phkResult);
+	}
+
 	std::string subKey = std::string(lpSubKey);
 
 	/*
@@ -436,6 +462,11 @@ LSTATUS WINAPI proxy_RegOpenKeyW(
 	LPCWSTR lpSubKey,
 	PHKEY phkResult
 ) {
+	// lpSubKey can be NULL per WinAPI spec
+	if (!lpSubKey) {
+		return OriginalRegOpenKeyW(hKey, lpSubKey, phkResult);
+	}
+
 	std::wstring subKey = std::wstring(lpSubKey);
 
 	/*
@@ -473,6 +504,11 @@ LSTATUS WINAPI proxy_RegOpenKeyExA(
 	REGSAM samDesired,
 	PHKEY phkResult
 ) {
+	// lpSubKey can be NULL per WinAPI spec
+	if (!lpSubKey) {
+		return OriginalRegOpenKeyExA(hKey, lpSubKey, ulOptions, samDesired, phkResult);
+	}
+
 	std::string subKey = std::string(lpSubKey);
 
 	/*

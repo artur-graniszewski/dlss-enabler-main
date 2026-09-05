@@ -6,7 +6,7 @@
 #include "../Includes/dlss/nvsdk_ngx_defs.h"
 #include "../Includes/NvParamImp.h"
 #ifdef DEBUG_NGX_GETTERS
-#include "../Utils/Console.h"
+#include "../Utils/Console.h" 
 #endif
 #include "../External/robin_hood.h"
 

@@ -1,56 +1,56 @@
 ifdef RAX
 	.code
-		extern originalFuncsVersion:QWORD
+		extern OriginalFunctions_version:QWORD
 		GetFileVersionInfoA proc
-			jmp QWORD ptr originalFuncsVersion[0 * 8]
+			jmp QWORD ptr OriginalFunctions_version[0 * 8]
 		GetFileVersionInfoA endp
 		GetFileVersionInfoByHandle proc
-			jmp QWORD ptr originalFuncsVersion[1 * 8]
+			jmp QWORD ptr OriginalFunctions_version[1 * 8]
 		GetFileVersionInfoByHandle endp
 		GetFileVersionInfoExA proc
-			jmp QWORD ptr originalFuncsVersion[2 * 8]
+			jmp QWORD ptr OriginalFunctions_version[2 * 8]
 		GetFileVersionInfoExA endp
 		GetFileVersionInfoExW proc
-			jmp QWORD ptr originalFuncsVersion[3 * 8]
+			jmp QWORD ptr OriginalFunctions_version[3 * 8]
 		GetFileVersionInfoExW endp
 		GetFileVersionInfoSizeA proc
-			jmp QWORD ptr originalFuncsVersion[4 * 8]
+			jmp QWORD ptr OriginalFunctions_version[4 * 8]
 		GetFileVersionInfoSizeA endp
 		GetFileVersionInfoSizeExA proc
-			jmp QWORD ptr originalFuncsVersion[5 * 8]
+			jmp QWORD ptr OriginalFunctions_version[5 * 8]
 		GetFileVersionInfoSizeExA endp
 		GetFileVersionInfoSizeExW proc
-			jmp QWORD ptr originalFuncsVersion[6 * 8]
+			jmp QWORD ptr OriginalFunctions_version[6 * 8]
 		GetFileVersionInfoSizeExW endp
 		GetFileVersionInfoSizeW proc
-			jmp QWORD ptr originalFuncsVersion[7 * 8]
+			jmp QWORD ptr OriginalFunctions_version[7 * 8]
 		GetFileVersionInfoSizeW endp
 		GetFileVersionInfoW proc
-			jmp QWORD ptr originalFuncsVersion[8 * 8]
+			jmp QWORD ptr OriginalFunctions_version[8 * 8]
 		GetFileVersionInfoW endp
 		VerFindFileA proc
-			jmp QWORD ptr originalFuncsVersion[9 * 8]
+			jmp QWORD ptr OriginalFunctions_version[9 * 8]
 		VerFindFileA endp
 		VerFindFileW proc
-			jmp QWORD ptr originalFuncsVersion[10 * 8]
+			jmp QWORD ptr OriginalFunctions_version[10 * 8]
 		VerFindFileW endp
 		VerInstallFileA proc
-			jmp QWORD ptr originalFuncsVersion[11 * 8]
+			jmp QWORD ptr OriginalFunctions_version[11 * 8]
 		VerInstallFileA endp
 		VerInstallFileW proc
-			jmp QWORD ptr originalFuncsVersion[12 * 8]
+			jmp QWORD ptr OriginalFunctions_version[12 * 8]
 		VerInstallFileW endp
 		VerLanguageNameA proc
-			jmp QWORD ptr originalFuncsVersion[13 * 8]
+			jmp QWORD ptr OriginalFunctions_version[13 * 8]
 		VerLanguageNameA endp
 		VerLanguageNameW proc
-			jmp QWORD ptr originalFuncsVersion[14 * 8]
+			jmp QWORD ptr OriginalFunctions_version[14 * 8]
 		VerLanguageNameW endp
 		VerQueryValueA proc
-			jmp QWORD ptr originalFuncsVersion[15 * 8]
+			jmp QWORD ptr OriginalFunctions_version[15 * 8]
 		VerQueryValueA endp
 		VerQueryValueW proc
-			jmp QWORD ptr originalFuncsVersion[16 * 8]
+			jmp QWORD ptr OriginalFunctions_version[16 * 8]
 		VerQueryValueW endp
 endif
 end

@@ -333,6 +333,15 @@ void main(uint3 dtid : SV_DispatchThreadID)
     int hitCount = 0;
     int totalSteps = 0;
     int skyEarlyOuts = 0;
+
+    // ============================================================
+    // GI-DERIVED FOG INFERENCE
+    // Accumulate raw (un-falloff'd) hit colors and squares for
+    // variance estimation. Uniform variance across hits + similarity
+    // to origin pixel color = strong fog signal.
+    // ============================================================
+    float3 hitColorSum = float3(0, 0, 0);
+    float3 hitColorSqSum = float3(0, 0, 0);
     
     const bool needColorRemap = (colorDims.x != outW || colorDims.y != outH);
     float2 colorType = needColorRemap ? colorDimsF : outDimsF;
@@ -450,9 +459,73 @@ void main(uint3 dtid : SV_DispatchThreadID)
             falloff = falloff * falloff;
             aoAccum += falloff;
             giAccum += hitColor * falloff;
+
+            // Raw stats (un-weighted) for fog variance signal
+            hitColorSum += hitColor;
+            hitColorSqSum += hitColor * hitColor;
         }
     }
     
+    // ============================================================
+    // GI-DERIVED FOG CONFIDENCE
+    // ============================================================
+    // Two signals:
+    //   colorMatch: how similar the average hit color is to origin
+    //               pixel color. Fog filters everything to the same
+    //               tint, so high match suggests veiled scene.
+    //   colorUnif:  how low the variance among hit colors is. Fog
+    //               makes all directions look the same.
+    // Combined: confidence that AO/GI here is bogus.
+    //
+    // Cost: 1 extra texture load (origin color) + ~15 ALU.
+    // Requires hitCount >= 4 to have meaningful statistics.
+    // ============================================================
+    float fogConfidence = 0.0;
+    float colorMatchDbg = 0.0;
+    float colorUnifDbg = 0.0;
+
+    if (hitCount >= 4 && linearDepth > 5.0)
+    {
+        float invHits = 1.0 / float(hitCount);
+        float3 meanHit = hitColorSum * invHits;
+        float3 varHit = max(hitColorSqSum * invHits - meanHit * meanHit, 0.0);
+
+        // Luma variance is more stable than per-channel
+        const float3 lumWeights = float3(0.299, 0.587, 0.114);
+        float lumaVar = dot(varHit, lumWeights);
+
+        // Sample origin pixel color (1 extra load - this is the only
+        // new texture access added by the entire fog inference path)
+        int2 originColorCoord = int2((float2(dp) + 0.5) * invDepthDims * colorType);
+        originColorCoord = clamp(originColorCoord, int2(0, 0), int2(colorDims) - 1);
+        float3 originColor = gColor.Load(int3(originColorCoord, 0)).rgb;
+
+        // colorMatch: 1.0 = identical to origin (fog!), 0.0 = very different
+        // Loosened from *4.0 to *2.5 to catch less-saturated fog
+        float matchDist = length(meanHit - originColor);
+        float colorMatch = saturate(1.0 - matchDist * 2.5);
+
+        // colorUnif: 1.0 = all hits same color (fog!), 0.0 = high variance
+        // Loosened from *200.0 to *100.0 to catch fog with some background bleed-through
+        float colorUnif = saturate(1.0 - lumaVar * 100.0);
+
+        // Bounce-light suppression: if mean hit is significantly BRIGHTER
+        // than origin in same direction, this is real GI bounce, not fog.
+        // Fog tends to be similar luminance to origin (both filtered).
+        float originLuma = dot(originColor, lumWeights);
+        float meanHitLuma = dot(meanHit, lumWeights);
+        float lumaRatio = meanHitLuma / max(originLuma, 0.01);
+        float notBounce = saturate(2.0 - lumaRatio); // 1.0 if hit<=origin, 0.0 if hit>=2*origin
+
+        // Distance ramp - low fog confidence in foreground
+        float distWeight = saturate((linearDepth - 5.0) / 15.0);
+
+        fogConfidence = colorMatch * colorUnif * notBounce * distWeight;
+
+        colorMatchDbg = colorMatch;
+        colorUnifDbg = colorUnif;
+    }
+
     // ============================================================
     // DEBUG MODES
     // ============================================================
@@ -496,15 +569,51 @@ void main(uint3 dtid : SV_DispatchThreadID)
     gOut0[p] = float4(HeatmapColor(depthVis), 1.0);
     return;
 #endif
+
+#if DEBUG_MODE == 10
+    // Color match standalone: green = origin matches mean hit (fog-like)
+    gOut0[p] = float4(1.0 - colorMatchDbg, colorMatchDbg, 0.0, 1.0);
+    return;
+#endif
+
+#if DEBUG_MODE == 11
+    // Color uniformity standalone: green = all hits same color (fog-like)
+    gOut0[p] = float4(1.0 - colorUnifDbg, colorUnifDbg, 0.0, 1.0);
+    return;
+#endif
+
+#if DEBUG_MODE == 12
+    // Combined fog confidence: green = high fog confidence (AO will be suppressed)
+    gOut0[p] = float4(1.0 - fogConfidence, fogConfidence, 0.0, 1.0);
+    return;
+#endif
     
     // ============================================================
     // NORMAL OUTPUT
     // ============================================================
+    // Apply fog confidence: lift AO toward 1.0 and tone down GI
+    // proportionally to confidence that this pixel is veiled by fog.
+    // GI gets *0.7 cap so it never goes fully off (some bounce is
+    // genuinely uniform e.g. enclosed bright rooms).
+    // ============================================================
+    // FOG SUPPRESSION
+    // ============================================================
+    // NOTE: Composite re-amplifies AO by aoStrengthMult=2.8 and pow(ao,1.6),
+    // which means even ao=0.95 from here ends up as ~20% darkening.
+    // To actually kill AO in fog, we must push ao toward (or above) 1.0
+    // aggressively. We lerp to 1.2 (clamped) so that even fogConfidence~0.5
+    // produces a clean ao=1.0 that survives Composite's amplification.
+    float aoSuppress = saturate(fogConfidence * 2.0);
+    float giSuppress = fogConfidence * 0.7;
+
     float ao = 1.0;
     if (validRays > 0)
     {
-        ao = 1.0 - (aoAccum / float(validRays)) * g.AoStrength * distanceAttenuation;
-        ao = clamp(ao, 0.02, 1.0);
+        float aoRaw = 1.0 - (aoAccum / float(validRays)) * g.AoStrength * distanceAttenuation;
+        aoRaw = clamp(aoRaw, 0.02, 1.0);
+        // Lerp toward 1.2 (not 1.0) then clamp - this ensures Composite's
+        // aoStrengthMult=2.8 can't pull a "suppressed" pixel back into darkness.
+        ao = saturate(lerp(aoRaw, 1.2, aoSuppress));
     }
     
     float3 gi = float3(0, 0, 0);
@@ -514,6 +623,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
         float lum = dot(gi, float3(0.299, 0.587, 0.114));
         if (lum > 0.5)
             gi *= 0.5 / lum;
+        gi *= (1.0 - giSuppress);
     }
     
     gOut0[p] = float4(gi, ao);

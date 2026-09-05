@@ -84,21 +84,23 @@ namespace OverdriveController
     static void ApplyPerformanceStrategy()
     {
         // Performance mode: Max FPS, lower quality
-        // - Reflex disabled (less overhead)
+        // - Reflex disabled (use C++ sleep fallback for frame limiting)
         // - Reflex Boost ON (forced override)
         // - Adaptive FG OFF
         // - SSRTGI Quality = Low
         // - VSync OFF
+        // - FPS Limit from user setting (uses C++ sleep fallback since Reflex is disabled)
 
         g_Override.isVsyncOverrideEnabled = true;
         g_Override.isVsyncEnabled = false;
 
-        g_Override.isReflexEnabled = false;
+        //g_Override.isReflexEnabled = false;   // Disables native Reflex, triggers C++ sleep fallback
         g_Override.isBoostOverriden = true;   // Force override
         g_Override.isBoostEnabled = true;     // Boost ON
 
-        g_Override.isFpsLimitEnabled = false;
-        g_Override.desiredFpsLimit = 0;
+        // Use user's FPS limit settings - will be handled by C++ sleep fallback
+        g_Override.isFpsLimitEnabled = ctx.reflex.isFpsLimitEnabled;
+        g_Override.desiredFpsLimit = ctx.reflex.desiredFpsLimit;
 
         g_Override.isDynamicFrameGenerationEnabled = false;
         g_Override.dynamicFrameGenerationThreshold = 0;
@@ -242,7 +244,7 @@ namespace OverdriveController
     bool GetReflexEnabled()
     {
         if (!IsActive())
-            return ctx.reflex.isOriginallyEnabled;
+            return true;  // When Overdrive is OFF, always use native Reflex/NVAPI sleep
         return g_Override.isReflexEnabled;
     }
 

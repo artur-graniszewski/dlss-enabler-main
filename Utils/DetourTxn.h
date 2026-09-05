@@ -12,6 +12,10 @@ struct DetourTxn {
         return api.Attach({ ppTarget, pDetour, name });
     }
 
+    bool detach(void** ppTarget, void* pDetour, const char* name) {
+        return api.Detach({ ppTarget, pDetour, name });
+    }
+
     bool commit(PVOID** pFailed = nullptr) {
         if (!active) return true;
         active = false;

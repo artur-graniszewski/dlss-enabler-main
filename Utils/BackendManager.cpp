@@ -1,13 +1,17 @@
 #include "BackendManager.h"
 #include <mutex>
 
+
+// Provide default, test-replaceable loader & logger wiring nearby to keep step 1 minimal.
+
+
 namespace {
 	std::wstring GetUpscalerDefaultPath() {
 		// TODO: produce the exact path you currently compute (respecting working dir & config)
 		return L"dlss-enabler-upscaler.dll";
 	}
 	std::wstring GetFrameGenDefaultPath() {
-		// TODO: keep existing pattern selection logic
+		// TODO: keep your existing pattern selection logic
 		return L"dlssg_to_fsr3_amd_is_better.dll";
 	}
 }

@@ -205,16 +205,19 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>Exports/Exports.def</ModuleDefinitionFile>
       <AdditionalDependencies>External/freetype/freetype.lib;Detours/detours-x86.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ImageHasSafeExceptionHandlers />
+      <GenerateMapFile>false</GenerateMapFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Experimental|Win32'">
@@ -347,19 +350,19 @@
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntelJCCErratum>true</IntelJCCErratum>
       <AdditionalIncludeDirectories>External/spdlog/include;C:\Games\VulkanSDK\1.3.268.0\Include;External/</AdditionalIncludeDirectories>
-      <DebugInformationFormat>None</DebugInformationFormat>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <CreateHotpatchableImage>
       </CreateHotpatchableImage>
       <MinimalRebuild>
       </MinimalRebuild>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <ShowIncludes>false</ShowIncludes>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>Exports/Exports.def</ModuleDefinitionFile>
       <AdditionalDependencies>Libs/fsr3/*;Libs/fsr2/*;Libs/fsr31/*;Libs/fsr2_212/*;Libs/detours.lib;%(AdditionalDependencies);Libs/fakenvapi_embed.lib;Dbghelp.lib;dxgi.lib;d3d11.lib;d3d12.lib;vulkan-1.lib;shlwapi.lib;dxguid.lib;freetype.lib;windowsapp.lib;winhttp.lib;Libs/OptiScaler.lib</AdditionalDependencies>
@@ -370,6 +373,7 @@
       <AdditionalLibraryDirectories>$(VULKAN_SDK)\Lib;Libs</AdditionalLibraryDirectories>
       <AdditionalOptions>/VERBOSE:LIB /INCLUDE:NVSDK_NGX_D3D11_Init /INCLUDE:NVSDK_NGX_D3D11_CreateFeature /INCLUDE:DLSSG_NVSDK_NGX_D3D12_CreateFeature /INCLUDE:DLSSG_NVSDK_NGX_VULKAN_CreateFeature /INCLUDE:DLSSG_NVSDK_NGX_D3D11_CreateFeature /INCLUDE:DLSSG_NVSDK_NGX_GetGPUArchitecture</AdditionalOptions>
       <IgnoreSpecificDefaultLibraries>winmm.lib</IgnoreSpecificDefaultLibraries>
+      <GenerateMapFile>false</GenerateMapFile>
     </Link>
     <PostBuildEvent>
       <Command>xcopy /f /y "$(TargetDir)$(ProjectName).dll" "C:\Users\Admin\Desktop\DLSS\Streamline_Sample-2.4.10\_bin\dbghelp.dll*"</Command>
@@ -588,6 +592,7 @@
     <ClCompile Include="Exports\Exports.cpp" />
     <ClCompile Include="Includes\nvapi\NvApiDriverSettings.c" />
     <ClCompile Include="Includes\NvParamImp.cpp" />
+    <ClCompile Include="Utils\ActionIntensity.cpp" />
     <ClCompile Include="Utils\Autoconfig.cpp" />
     <ClCompile Include="Utils\BackendManager.cpp" />
     <ClCompile Include="Utils\Common.cpp" />
@@ -595,7 +600,9 @@
     <ClCompile Include="Utils\Console.cpp" />
     <ClCompile Include="Utils\DetourApiDetours.cpp" />
     <ClCompile Include="Utils\DlssgHook.cpp" />
+    <ClCompile Include="Utils\DlssgLazyHook.cpp" />
     <ClCompile Include="Utils\DlssgProxy.cpp" />
+    <ClCompile Include="Utils\DlssgRouter.cpp" />
     <ClCompile Include="Utils\DxgiHook.cpp" />
     <ClCompile Include="Utils\DxgiProxy.cpp" />
     <ClCompile Include="Utils\FakeNVAPIHook.cpp" />
@@ -604,9 +611,11 @@
     <ClCompile Include="Utils\GpuHelpers.cpp" />
     <ClCompile Include="Utils\HagsHook.cpp" />
     <ClCompile Include="Utils\Kernel32Hook.cpp" />
+    <ClCompile Include="Utils\LatencyProbe.cpp" />
     <ClCompile Include="Utils\Logger.cpp" />
     <ClCompile Include="utils\Kernel32Proxy.cpp" />
     <ClCompile Include="Utils\MenuAnimations.cpp" />
+    <ClCompile Include="Utils\NgxFileSigner.cpp" />
     <ClCompile Include="Utils\NvngxCommon.cpp" />
     <ClCompile Include="Utils\NgxFeatureEvents.cpp" />
     <ClCompile Include="Utils\NgxFrontend.cpp" />
@@ -633,6 +642,7 @@
     <ClCompile Include="Utils\SwapchainEvents.cpp" />
     <ClCompile Include="Utils\SwapchainProxy.cpp" />
     <ClCompile Include="Utils\UiHook.cpp" />
+    <ClCompile Include="Utils\UxCompose.cpp" />
     <ClCompile Include="Utils\UxHook.cpp" />
     <ClCompile Include="Utils\UxImgui\imgui.cpp" />
     <ClCompile Include="Utils\UxImgui\imgui_draw.cpp" />
@@ -668,17 +678,29 @@
     <ClInclude Include="Includes\dlss\nvsdk_ngx_vk.h" />
     <ClInclude Include="Includes\nvapi.h" />
     <ClInclude Include="Includes\nvapi\NvApiDriverSettings.h" />
+    <ClInclude Include="Includes\nvapi_lite_common.h" />
+    <ClInclude Include="Includes\nvapi_lite_d3dext.h" />
+    <ClInclude Include="Includes\nvapi_lite_salend.h" />
+    <ClInclude Include="Includes\nvapi_lite_salstart.h" />
+    <ClInclude Include="Includes\nvapi_lite_sli.h" />
+    <ClInclude Include="Includes\nvapi_lite_stereo.h" />
+    <ClInclude Include="Includes\nvapi_lite_surround.h" />
     <ClInclude Include="Includes\NvParamImp.h" />
+    <ClInclude Include="NvapiTest.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="Utils\ActionIntensity.h" />
     <ClInclude Include="Utils\Autoconfig.h" />
     <ClInclude Include="Utils\BackendManager.h" />
     <ClInclude Include="Utils\Console.h" />
+    <ClInclude Include="Utils\D3D12ComputeStateTracker.h" />
     <ClInclude Include="Utils\DetourApi.h" />
     <ClInclude Include="Utils\DetourApiDetours.h" />
     <ClInclude Include="Utils\DetourTxn.h" />
     <ClInclude Include="Utils\DlssgHook.h" />
+    <ClInclude Include="Utils\DlssgLazyHook.h" />
     <ClInclude Include="Utils\DlssgProxy.h" />
+    <ClInclude Include="Utils\DlssgRouter.h" />
     <ClInclude Include="Utils\DxgiHook.h" />
     <ClInclude Include="Utils\DxgiProxy.h" />
     <ClInclude Include="Utils\ExportRegistry.h" />
@@ -696,8 +718,10 @@
     <ClInclude Include="Utils\INgxBackend.h" />
     <ClInclude Include="Utils\IProcResolver.h" />
     <ClInclude Include="Utils\Kernel32Hook.h" />
+    <ClInclude Include="Utils\LatencyProbe.h" />
     <ClInclude Include="Utils\Logger.h" />
     <ClInclude Include="Utils\MenuAnimations.h" />
+    <ClInclude Include="Utils\NgxFileSigner.h" />
     <ClInclude Include="Utils\NvngxCommon.h" />
     <ClInclude Include="Utils\NgxFeatureEvents.h" />
     <ClInclude Include="Utils\NgxFrontend.h" />
@@ -725,6 +749,7 @@
     <ClInclude Include="Utils\ReflexEvents.h" />
     <ClInclude Include="Utils\RegistryHook.h" />
     <ClInclude Include="Utils\RegistryProxy.h" />
+    <ClInclude Include="Utils\RoutePolicy.h" />
     <ClInclude Include="Utils\ScopedGpuSpoofing.h" />
     <ClInclude Include="Utils\SettingsMenu.h" />
     <ClInclude Include="Utils\SettingsPersistence.h" />
@@ -740,9 +765,11 @@
     <ClInclude Include="Utils\SsrtgiTemporal_cso.h" />
     <ClInclude Include="Utils\StreamlineHook.h" />
     <ClInclude Include="Utils\StreamlineProxy.h" />
+    <ClInclude Include="Utils\SwapchainColorState.h" />
     <ClInclude Include="Utils\SwapchainEvents.h" />
     <ClInclude Include="Utils\SwapchainProxy.h" />
     <ClInclude Include="Utils\UiHook.h" />
+    <ClInclude Include="Utils\UxCompose.h" />
     <ClInclude Include="Utils\UxHook.h" />
     <ClInclude Include="Utils\UxImgui\imconfig.h" />
     <ClInclude Include="Utils\UxImgui\imgui.h" />

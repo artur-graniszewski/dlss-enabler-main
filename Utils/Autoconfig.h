@@ -6,11 +6,12 @@ class Autoconfig
 public:
 	static bool PreloadUpscaler(bool forceLoad = false);
 	static HMODULE GetNGXLibrary();
+	static HMODULE GetNVAPILibrary();
 	static bool InitializeFrameGeneration();
 	static bool Initialize();
 
 private:
 	static void CheckCommandLineParams();
 	static void CheckIniFile();
-};
+}; 
 

@@ -52,5 +52,22 @@ namespace SettingsMenu
     // Side Panel (Graphics/Performance HUD)
     void SetSidePanelEnabled(bool enabled);
     bool IsSidePanelEnabled();
-}
 
+    // Height the side panel occupied on the last rendered frame, 0 when not shown.
+    // The panel sizes itself to its content, so anything that needs to sit below it
+    // must ask instead of recomputing the height.
+    float GetSidePanelHeight();
+
+    // UI scaling (proportional to 1080p reference, never smaller)
+    float GetUiScale();
+    void SetUiScaleOverride(float scale);  // 0 = auto, >0 = forced
+    float GetUiScaleOverride();
+
+    // Menu toggle key (virtual key code, default VK_OEM_3 = tilde/backtick)
+    int GetMenuToggleKey();
+    void SetMenuToggleKey(int vk);
+
+    // Convert between VK code and user-friendly name (e.g. "VK_INSERT", "F1", "Tilde")
+    const char* VkToFriendlyName(int vk);
+    int FriendlyNameToVk(const char* name);
+}
