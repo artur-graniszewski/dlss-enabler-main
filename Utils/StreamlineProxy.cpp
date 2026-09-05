@@ -1099,6 +1099,101 @@ int detoured_slDLSSGGetState(void *viewport, DLSSGState& state, const DLSSGOptio
 	return result;
 }
 
+void* GetCurrentViewPort() { return currentViewPort; }
+
+// Exported helper: force Streamline to apply current MFG override state.
+// Called from:
+//   - Sidebar dropdown handler when user changes override
+//   - FpsMonitor::UpdateDynamicMfg when DFG dynamic mode changes at runtime
+//
+// Respects the new semantics:
+//   nvapi x1       -> mode=eOff (force FG disabled)
+//   nvapi x2..x6   -> mode honored from cached game state; if game had eOn, apply our multiplier;
+//                     if game had eOff, keep eOff (don't force-enable over game's decision)
+//   nvapi OFF + DFG -> mode honored from cache; numFramesToGenerate=dfgMode when game had eOn
+void StreamlineProxy_ForceApplyMfgMode()
+{
+	if (!original_slDLSSGSetOptions || !currentViewPort || !g_HasGameDLSSGOptions)
+		return;
+
+	const int nvapiMode = ctx.nvapi.mfgEnforcedMode;
+	const int dfgMode = ctx.streamline.mfgEnforcedMode;
+
+	// Nothing active and nothing to restore - bail
+	if (nvapiMode == 0 && dfgMode <= 0)
+		return;
+
+	std::lock_guard<std::mutex> lock(g_DlssgSetOptionsMutex);
+
+	// Start from game's last cached options to preserve flags, formats, buffer sizes, etc.
+	DLSSGOptions optionsg = g_LastGameDLSSGOptions;
+
+	if (NvapiOverrideIsForceOff(nvapiMode))
+	{
+		// x1: force disable regardless of game's last state
+		optionsg.mode = DLSSGMode::eOff;
+		optionsg.numFramesToGenerate = 1;
+	}
+	else if (NvapiOverrideIsForceOn(nvapiMode))
+	{
+		// x2..x6: honor game's mode - only apply multiplier when game had FG enabled.
+		// If game had FG off, leave mode=eOff untouched; wrapper will apply override when
+		// game next enables FG.
+		if (optionsg.mode != DLSSGMode::eOff)
+			optionsg.numFramesToGenerate = NvapiOverrideToNumFrames(nvapiMode);
+	}
+	else if (dfgMode > 0)
+	{
+		// DFG dynamic (raw frame count encoding)
+		if (optionsg.mode != DLSSGMode::eOff)
+			optionsg.numFramesToGenerate = dfgMode;
+	}
+
+	LOG_DEBUG(L"[STREAMLINE] ForceApplyMfgMode: mode=" + std::to_wstring((uint32_t)optionsg.mode)
+		+ L" numFramesToGenerate=" + std::to_wstring(optionsg.numFramesToGenerate)
+		+ L" (nvapi=" + std::to_wstring(nvapiMode)
+		+ L" dfg=" + std::to_wstring(dfgMode) + L")"
+		+ L" flags=" + std::to_wstring((uint32_t)optionsg.flags)
+		+ L" cachedFromGame=" + std::to_wstring(g_HasGameDLSSGOptions));
+
+	g_IsInternalCall = true;
+	int result = SubmitDLSSGOptionsLocked(currentViewPort, optionsg);
+	g_IsInternalCall = false;
+
+	LOG_DEBUG(L"[STREAMLINE] ForceApplyMfgMode: returned " + std::to_wstring(result));
+}
+
+// Exported helper: restore the full cached game DLSSG options to Streamline
+// Called when DFG is disabled OR when sidebar override cycles back to OFF -
+// gives back full control to the game's settings.
+// Skips restore if any nvapi override is active (including x1), since wrapper
+// will enforce override on next game call anyway.
+void StreamlineProxy_RestoreGameDLSSGOptions()
+{
+	if (!original_slDLSSGSetOptions || !currentViewPort || !g_HasGameDLSSGOptions)
+		return;
+
+	// Any nvapi override active (x1..x6) means we shouldn't restore - wrapper handles it
+	if (ctx.nvapi.mfgEnforcedMode != 0)
+	{
+		LOG_DEBUG(L"[STREAMLINE] RestoreGameDLSSGOptions: skipped, nvapi override active (mode="
+			+ std::to_wstring(ctx.nvapi.mfgEnforcedMode) + L")");
+		return;
+	}
+
+	std::lock_guard<std::mutex> lock(g_DlssgSetOptionsMutex);
+
+	LOG_DEBUG(L"[STREAMLINE] RestoreGameDLSSGOptions: mode=" + std::to_wstring((uint32_t)g_LastGameDLSSGOptions.mode)
+		+ L" numFramesToGenerate=" + std::to_wstring(g_LastGameDLSSGOptions.numFramesToGenerate)
+		+ L" flags=" + std::to_wstring((uint32_t)g_LastGameDLSSGOptions.flags));
+
+	g_IsInternalCall = true;
+	int result = SubmitDLSSGOptionsLocked(currentViewPort, g_LastGameDLSSGOptions);
+	g_IsInternalCall = false;
+
+	LOG_DEBUG(L"[STREAMLINE] RestoreGameDLSSGOptions: returned " + std::to_wstring(result));
+}
+
 int detoured_slSetFeatureLoaded(Feature feature, bool loaded)
 {
 	//LOG_WARNING(std::wstring(L"========= ") + std::to_wstring(feature) + L" : " + std::to_wstring(loaded)  + __FUNCTIONW__);

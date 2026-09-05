@@ -3029,7 +3029,7 @@ namespace NGX
 
 		if (NVSDK_NGX_SUCCEED(result)) {
 			handleRegistry.erase(featureHandle);
-		}
+		} 
 
 		// Dispatch POST-RELEASE event
 		NgxFeatureEvents::DispatchPostReleaseVulkan(featureHandle, featureId, result);

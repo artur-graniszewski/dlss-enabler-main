@@ -1258,6 +1258,19 @@ namespace SettingsMenu
             hadUnsavedLastFrame = hasUnsaved;
         }
 
+        // Detect when user clicks Persist � update g_MfgModeLastSaved
+        {
+            static bool hadUnsavedLastFrame = false;
+            bool hasUnsaved = SettingsPersistence::HasUnsavedChanges();
+            if (hadUnsavedLastFrame && !hasUnsaved)
+            {
+                SidePanel::g_MfgModeLastSaved = ctx.nvapi.mfgEnforcedMode;
+                SidePanel::g_DlssgDisabledLastSaved = ctx.ngx.isDlssgDisabled;
+                SidePanel::g_HybridMfgForcedLastSaved = ctx.ngx.isHybridMfgForced;
+            }
+            hadUnsavedLastFrame = hasUnsaved;
+        }
+
         // Get animated width
         // Get animated width and apply UI scale (MenuAnimations targets 280px at 1080p)
         const float panelWidth = MenuAnimations::GetSidePanelWidth() * g_UiScale;
@@ -3115,7 +3128,7 @@ namespace SettingsMenu
                 }
             }
 
-            UxImGui::Dummy(UxImVec2(0, 6));
+            UxImGui::Dummy(UxImVec2(0, 4));
 
             // Debug visualization toggles - only enabled when Frame Generation is active
             // These control bits in ctx.flags

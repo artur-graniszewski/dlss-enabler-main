@@ -409,6 +409,12 @@ namespace SettingsPersistence
             return false;
         }
 
+        // Snapshot the GhostBuster default supplied by ctx BEFORE we start
+        // parsing the INI. Parsing will overwrite ctx.ngx.isGhostBustingEnabled
+        // with whatever value the old INI stored; the migration block at the
+        // end of Load() needs the original ctx-supplied default to restore it.
+        const bool ctxGhostBusterDefault = ctx.ngx.isGhostBustingEnabled;
+
         std::unordered_map<std::string, std::string> settings;
         std::string currentSection;
         std::string line;
